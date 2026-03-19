@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-main.py — JBAiGNN 新闻自动爬取 + 翻译 + 转换 + 发布 编排器
+main.py — MCTTK 新闻自动爬取 + 翻译 + 转换 + 发布 编排器
 
 工作流程：
   1. 从 Minecraft 官方 API 获取最新新闻
@@ -319,7 +319,7 @@ def run_post_only(config: dict):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="JBAiGNN — Minecraft 新闻自动爬取+翻译+发布",
+        description="MCTTK — Minecraft 新闻自动爬取+翻译+发布",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
             "示例:\n"
@@ -342,7 +342,7 @@ def main():
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', line_buffering=True)
 
     print("=" * 60)
-    print("  JBAiGNN — Minecraft 新闻自动爬取 + 翻译 + 发布")
+    print("  MCTTK — Minecraft 新闻自动爬取 + 翻译 + 发布")
     print("=" * 60)
 
     # 加载配置

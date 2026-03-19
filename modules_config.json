@@ -3,7 +3,7 @@
     {
       "id": "module_sign",
       "title": "工具署名",
-      "content": "[size=2][b]【本文Ai翻译及Ai排版借助了： [url=https://jiubook.github.io/MinecraftJJTools/J2MM_JsonToMcbbsMarkdown.html]J2MM[/url]、[url=https://github.com/jiubook/MinecraftJJTools]JBAiGNN[/url]、[url=https://chatgpt.com/]ChatGPT[/url]、[url=https://claude.com/]Claude[/url]等工具 】[/b][/size]",
+      "content": "[size=2][b]【本文Ai翻译及Ai排版借助了： [url=https://github.com/jiubook/MCTTK]MCTTK[/url]、[url=https://chatgpt.com/]ChatGPT[/url]、[url=https://claude.com/]Claude[/url]、[url=https://aistudio.xiaomimimo.com/]MiMo[/url]等工具 】[/b][/size]",
       "position": "start",
       "order": 1001,
       "enabled": true
