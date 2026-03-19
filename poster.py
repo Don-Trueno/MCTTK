@@ -632,11 +632,12 @@ class MCBBSPoster:
         # 加载元数据
         with open(json_path, "r", encoding="utf-8") as f:
             meta = json.load(f)
-        title = meta.get("title", "").strip()
+        title = meta.get("translated_title", "").strip()
         if not title:
-            title = meta.get("translated_title", "").strip()
+            title = meta.get("title", "").strip()
         if not title:
             raise ValueError(f"{json_path} 中找不到 title 字段")
+        title = title + "[AI翻译]"
 
         with open(txt_path, "r", encoding="utf-8") as f:
             message = f.read().strip()
