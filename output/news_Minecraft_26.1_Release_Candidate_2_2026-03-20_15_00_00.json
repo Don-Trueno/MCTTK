@@ -1,0 +1,114 @@
+{
+  "title": "Minecraft 26.1 Release Candidate 2",
+  "translated_title": "Minecraft 26.1 发布候选版 2",
+  "release_date": "2026-03-20T15:00:00Z",
+  "url": "https://www.minecraft.net/zh-hans/article/minecraft-26-1-release-candidate-2",
+  "author": "Java Team",
+  "imageAltText": "A Baby Zombie is chasing a Villager while holding an Acacia Button",
+  "description": "Minecraft 26.1 Release Candidate 2",
+  "header_image_url": "https://www.minecraft.net/content/dam/minecraftnet/games/minecraft/screenshots/26.1-rc-2%201170x500.jpg",
+  "blocks": [
+    {
+      "id": "b0001",
+      "type": "p",
+      "source_text": "Friday Surprise! Today we are shipping the second release candidate for 26.1 and the Tiny Takeover game drop to address an important internationalization issue. If no other critical issues are found, this will be the version that we ship for the eventual full release.",
+      "translated_text": "周五惊喜！我们今天发布了 26.1 的第二个候选版和 Tiny Takeover 游戏更新，以解决一个重要的国际化问题。如果未发现其他关键问题，此版本将作为最终正式版本发布。",
+      "meta": {}
+    },
+    {
+      "id": "b0002",
+      "type": "p",
+      "source_text": "Happy mining!",
+      "translated_text": "挖矿愉快！",
+      "meta": {}
+    },
+    {
+      "id": "b0003",
+      "type": "h2",
+      "source_text": "Fixed bugs in 26.1 Release Candidate 2",
+      "translated_text": "26.1 候选版 2 修复的错误",
+      "meta": {}
+    },
+    {
+      "id": "b0004",
+      "type": "li",
+      "source_text": "[MC-306928](https://bugs.mojang.com/browse/MC-306928) - Switching to another window still forcibly sets the input method to English when no input field is focused",
+      "translated_text": "[MC-306928](https://bugs.mojang.com/browse/MC-306928) - 在没有输入框聚焦时切换到其他窗口仍会强制将输入法设置为英文",
+      "meta": {
+        "indent_level": 0
+      }
+    },
+    {
+      "id": "b0005",
+      "type": "h2",
+      "source_text": "Get the Release Candidate",
+      "translated_text": "获取候选版本",
+      "meta": {}
+    },
+    {
+      "id": "b0006",
+      "type": "p",
+      "source_text": "Release Candidates are available for Minecraft: Java Edition. To install the Release Candidate, open up the [Minecraft Launcher](https://www.minecraft.net/content/minecraft-net/language-masters/download) and enable snapshots in the \"Installations\" tab.",
+      "translated_text": "候选版本现已提供给 Minecraft：Java 版。要安装候选版本，请打开 [Minecraft 启动器](https://www.minecraft.net/content/minecraft-net/language-masters/download)，并在 \"安装\" 选项卡中启用快照。",
+      "meta": {}
+    },
+    {
+      "id": "b0007",
+      "type": "p",
+      "source_text": "Testing versions can corrupt your world, so please backup and/or run them in a different folder from your main worlds.",
+      "translated_text": "测试版本可能会损坏你的世界，请务必备份并/或在与主世界不同的文件夹中运行它们。",
+      "meta": {}
+    },
+    {
+      "id": "b0008",
+      "type": "p",
+      "source_text": "Cross-platform server jar:",
+      "translated_text": "跨平台服务器 jar：",
+      "meta": {}
+    },
+    {
+      "id": "b0009",
+      "type": "li",
+      "source_text": "[Minecraft server jar](https://piston-data.mojang.com/v1/objects/6ee1a1062eb46dcefa721b519c5a6eebc1360a38/server.jar)",
+      "translated_text": "[Minecraft 服务器 jar](https://piston-data.mojang.com/v1/objects/6ee1a1062eb46dcefa721b519c5a6eebc1360a38/server.jar)",
+      "meta": {
+        "indent_level": 0
+      }
+    },
+    {
+      "id": "b0010",
+      "type": "p",
+      "source_text": "Report bugs here:",
+      "translated_text": "在此报告问题：",
+      "meta": {}
+    },
+    {
+      "id": "b0011",
+      "type": "li",
+      "source_text": "[Minecraft issue tracker](https://bugs.mojang.com/projects/MC/summary) !",
+      "translated_text": "[Minecraft 问题追踪器](https://bugs.mojang.com/projects/MC/summary) !",
+      "meta": {
+        "indent_level": 0
+      }
+    },
+    {
+      "id": "b0012",
+      "type": "p",
+      "source_text": "Want to give feedback?",
+      "translated_text": "想要提供反馈吗？",
+      "meta": {}
+    },
+    {
+      "id": "b0013",
+      "type": "li",
+      "source_text": "For any feedback and suggestions, head over to the [Feedback site](https://feedback.minecraft.net/) . If you're feeling chatty, join us over at the  [official Minecraft Discord](https://discordapp.com/invite/minecraft) .",
+      "translated_text": "如有任何反馈或建议，请前往[反馈网站](https://feedback.minecraft.net/)。如果想在线交流，可加入我们的[官方 Minecraft Discord](https://discordapp.com/invite/minecraft)。",
+      "meta": {
+        "indent_level": 0
+      }
+    }
+  ],
+  "content": "Friday Surprise! Today we are shipping the second release candidate for 26.1 and the Tiny Takeover game drop to address an important internationalization issue. If no other critical issues are found, this will be the version that we ship for the eventual full release.\n\nHappy mining!\n\nFixed bugs in 26.1 Release Candidate 2\n\n[MC-306928](https://bugs.mojang.com/browse/MC-306928) - Switching to another window still forcibly sets the input method to English when no input field is focused\n\nGet the Release Candidate\n\nRelease Candidates are available for Minecraft: Java Edition. To install the Release Candidate, open up the [Minecraft Launcher](https://www.minecraft.net/content/minecraft-net/language-masters/download) and enable snapshots in the \"Installations\" tab.\n\nTesting versions can corrupt your world, so please backup and/or run them in a different folder from your main worlds.\n\nCross-platform server jar:\n\n[Minecraft server jar](https://piston-data.mojang.com/v1/objects/6ee1a1062eb46dcefa721b519c5a6eebc1360a38/server.jar)\n\nReport bugs here:\n\n[Minecraft issue tracker](https://bugs.mojang.com/projects/MC/summary) !\n\nWant to give feedback?\n\nFor any feedback and suggestions, head over to the [Feedback site](https://feedback.minecraft.net/) . If you're feeling chatty, join us over at the  [official Minecraft Discord](https://discordapp.com/invite/minecraft) .",
+  "translated_content": "周五惊喜！我们今天发布了 26.1 的第二个候选版和 Tiny Takeover 游戏更新，以解决一个重要的国际化问题。如果未发现其他关键问题，此版本将作为最终正式版本发布。\n\n挖矿愉快！\n\n26.1 候选版 2 修复的错误\n\n[MC-306928](https://bugs.mojang.com/browse/MC-306928) - 在没有输入框聚焦时切换到其他窗口仍会强制将输入法设置为英文\n\n获取候选版本\n\n候选版本现已提供给 Minecraft：Java 版。要安装候选版本，请打开 [Minecraft 启动器](https://www.minecraft.net/content/minecraft-net/language-masters/download)，并在 \"安装\" 选项卡中启用快照。\n\n测试版本可能会损坏你的世界，请务必备份并/或在与主世界不同的文件夹中运行它们。\n\n跨平台服务器 jar：\n\n[Minecraft 服务器 jar](https://piston-data.mojang.com/v1/objects/6ee1a1062eb46dcefa721b519c5a6eebc1360a38/server.jar)\n\n在此报告问题：\n\n[Minecraft 问题追踪器](https://bugs.mojang.com/projects/MC/summary) !\n\n想要提供反馈吗？\n\n如有任何反馈或建议，请前往[反馈网站](https://feedback.minecraft.net/)。如果想在线交流，可加入我们的[官方 Minecraft Discord](https://discordapp.com/invite/minecraft)。",
+  "source": "minecraft_api"
+}
