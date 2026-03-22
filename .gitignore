@@ -25,7 +25,8 @@ dist/
 build/
 
 # 调试文件
-debug_post_*.html
+debug*.*
+test*.*
 
 # IDE
 .vscode/

@@ -143,6 +143,69 @@ HEADERS_HTML = {
     "Accept": CFG["http"]["accept"]
 }
 
+# ── 词汇表加载 ─────────────────────────────────────────
+
+def load_glossary(glossary_path: str = None) -> dict:
+    """加载专业术语词汇表"""
+    if glossary_path is None:
+        glossary_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "glossary.json")
+
+    if not os.path.exists(glossary_path):
+        return {}
+
+    try:
+        with open(glossary_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return data.get("terms", {})
+    except (json.JSONDecodeError, IOError) as e:
+        print(f"[词汇表] 加载失败: {e}")
+        return {}
+
+GLOSSARY = load_glossary()
+
+
+def find_relevant_terms(text: str, glossary: dict) -> dict:
+    """
+    从文本中查找相关的专业术语
+
+    Args:
+        text: 待翻译的文本
+        glossary: 词汇表字典 {英文: 中文}
+
+    Returns:
+        相关术语的字典 {英文: 中文}
+    """
+    if not text or not glossary:
+        return {}
+
+    relevant = {}
+    text_lower = text.lower()
+
+    for en_term, zh_term in glossary.items():
+        # 不区分大小写查找
+        if en_term.lower() in text_lower:
+            relevant[en_term] = zh_term
+
+    return relevant
+
+
+def build_glossary_prompt(relevant_terms: dict) -> str:
+    """
+    根据相关术语构建提示词片段
+
+    Args:
+        relevant_terms: 相关术语字典 {英文: 中文}
+
+    Returns:
+        提示词字符串
+    """
+    if not relevant_terms:
+        return ""
+
+    terms_list = [f"  - {en} → {zh}" for en, zh in relevant_terms.items()]
+    prompt = "\n专业术语对照（请严格使用以下译名）：\n" + "\n".join(terms_list)
+    return prompt
+
 
 # ── 工具函数 ─────────────────────────────────────────
 
@@ -480,9 +543,25 @@ def process_feedback_news(news_item: dict, config: dict) -> dict:
 
 # ── 翻译 ─────────────────────────────────────────────
 
-def translate_text(text, system_prompt=None):
-    """调用 OpenAI 兼容 API 翻译文本（支持自动重试）"""
+def translate_text(text, system_prompt=None, use_glossary=True):
+    """
+    调用 OpenAI 兼容 API 翻译文本（支持自动重试）
+
+    Args:
+        text: 待翻译的文本
+        system_prompt: 系统提示词（可选）
+        use_glossary: 是否使用词汇表动态添加术语对照（默认 True）
+    """
     system_prompt = system_prompt or CFG["prompts"]["translate_text_default"]
+
+    # 动态添加相关术语到提示词
+    if use_glossary and GLOSSARY:
+        relevant_terms = find_relevant_terms(text, GLOSSARY)
+        if relevant_terms:
+            glossary_prompt = build_glossary_prompt(relevant_terms)
+            system_prompt = system_prompt + glossary_prompt
+            print(f"[词汇表] 添加 {len(relevant_terms)} 个相关术语到提示词")
+
     host = CFG["openai_compat"]["host"]
     endpoint = CFG["openai_compat"]["endpoint"]
     api_key = CFG["openai_compat"]["api_key"]
@@ -842,7 +921,19 @@ def translate_blocks(blocks: list) -> list:
 
     def translate_batch(batch_index, batch):
         batch_json = json.dumps(batch, ensure_ascii=False, indent=0)
-        translated_result = translate_text(batch_json, system_prompt=system_prompt)
+
+        # 为当前批次动态添加相关术语
+        batch_system_prompt = system_prompt
+        if GLOSSARY:
+            # 收集批次中所有文本
+            batch_texts = " ".join([item.get("text", "") for item in batch])
+            relevant_terms = find_relevant_terms(batch_texts, GLOSSARY)
+            if relevant_terms:
+                glossary_prompt = build_glossary_prompt(relevant_terms)
+                batch_system_prompt = system_prompt + glossary_prompt
+                print(f"[词汇表] 批次 {batch_index + 1} 添加 {len(relevant_terms)} 个术语")
+
+        translated_result = translate_text(batch_json, system_prompt=batch_system_prompt, use_glossary=False)
         if not translated_result:
             print(f"[翻译] 批次 {batch_index + 1} 失败，跳过")
             return {}
