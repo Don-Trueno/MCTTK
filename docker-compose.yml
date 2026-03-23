@@ -1,0 +1,18 @@
+version: '3.8'
+
+services:
+  mcttk:
+    build: .
+    container_name: mcttk-scraper
+    restart: unless-stopped
+    volumes:
+      - ./output:/app/output
+      - ./config.json:/app/config.json:ro
+      - ./modules_config.json:/app/modules_config.json:ro
+      - ./glossary.json:/app/glossary.json:ro
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - MCBBS_USERNAME=${MCBBS_USERNAME}
+      - MCBBS_PASSWORD=${MCBBS_PASSWORD}
+    mem_limit: 512m
+    mem_reservation: 256m
