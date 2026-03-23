@@ -121,18 +121,18 @@ def detect_module_type(message: str, title: str) -> str | None:
         if f"[{tag}]" in message:
             return category
     title_lower = title.lower()
-    if any(kw in title_lower for kw in ["snapshot", "快照"]):
+    if any(kw in title_lower for kw in ["Snapshot", "快照"]):
         return "java_snapshot"
-    if any(kw in title_lower for kw in ["pre-release", "prerelease", "预发布"]):
+    if any(kw in title_lower for kw in ["Pre-release", "prerelease", "预发布"]):
         return "java_prerelease"
-    if any(kw in title_lower for kw in ["release candidate", "rc"]):
+    if any(kw in title_lower for kw in ["Release Candidate", "Candidate", "候选"]):
         return "java_rc"
-    if any(kw in title_lower for kw in ["java", "java版"]):
+    if any(kw in title_lower for kw in ["Java", "Java版"]):
         return "java_release"
-    if any(kw in title_lower for kw in ["bedrock", "基岩"]):
-        return "bedrock_release"
-    if "beta" in title_lower or "preview" in title_lower:
+    if any(kw in title_lower for kw in ["Beta", "Preview", "预览", "测试"]):
         return "bedrock_beta"
+    if any(kw in title_lower for kw in ["Bedrock", "基岩"]):
+        return "bedrock_release"
     return None
 
 
