@@ -666,9 +666,13 @@ class MCBBSPoster:
             except Exception as e:
                 print(f"    ⚠ JSON 附件上传失败，跳过: {e}")
 
-        # 检测分类（优先用原始英文标题，避免翻译后关键词丢失）
+        # 检测分类（同时检测英文和中文标题，避免关键词丢失）
         original_title = meta.get("title", "").strip()
-        module_type = detect_module_type(message, original_title or title)
+        # 先用英文标题检测
+        module_type = detect_module_type(message, original_title) if original_title else None
+        # 如果英文标题检测失败，再用中文标题检测
+        if not module_type:
+            module_type = detect_module_type(message, title)
         # 如果无法检测到类型，使用 "normal" 作为默认分类
         if not module_type:
             module_type = "normal"
