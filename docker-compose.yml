@@ -10,6 +10,12 @@ services:
       - ./config.json:/app/config.json:ro
       - ./modules_config.json:/app/modules_config.json:ro
       - ./glossary.json:/app/glossary.json:ro
+      - ./main.py:/app/main.py
+      - ./scraper.py:/app/scraper.py
+      - ./converter.py:/app/converter.py
+      - ./poster.py:/app/poster.py
+      - ./scheduler.py:/app/scheduler.py
+      - ./init_state.py:/app/init_state.py
     environment:
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - MCBBS_USERNAME=${MCBBS_USERNAME}

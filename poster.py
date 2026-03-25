@@ -121,18 +121,21 @@ def detect_module_type(message: str, title: str) -> str | None:
         if f"[{tag}]" in message:
             return category
     title_lower = title.lower()
-    if any(kw in title_lower for kw in ["Snapshot", "快照"]):
+    # Java 版本检测（优先级高）
+    if any(kw in title_lower for kw in ["snapshot", "快照"]):
         return "java_snapshot"
-    if any(kw in title_lower for kw in ["Pre-release", "prerelease", "预发布"]):
+    if any(kw in title_lower for kw in ["pre-release", "prerelease", "预发布"]):
         return "java_prerelease"
-    if any(kw in title_lower for kw in ["Release Candidate", "Candidate", "候选"]):
+    if any(kw in title_lower for kw in ["release candidate", "候选"]):
         return "java_rc"
-    if any(kw in title_lower for kw in ["Java", "Java版"]):
-        return "java_release"
-    if any(kw in title_lower for kw in ["Beta", "Preview", "预览", "测试"]):
+    # 基岩版本检测
+    if any(kw in title_lower for kw in ["beta", "preview", "预览"]):
         return "bedrock_beta"
-    if any(kw in title_lower for kw in ["Bedrock", "基岩"]):
+    if any(kw in title_lower for kw in ["bedrock", "基岩"]):
         return "bedrock_release"
+    # Java 正式版（最后检测，避免误判）
+    if any(kw in title_lower for kw in ["minecraft java", "java edition", "java 版"]) or re.search(r'\b1\.\d+(\.\d+)?\b', title):
+        return "java_release"
     return None
 
 

@@ -681,17 +681,20 @@ def get_latest_news_list(page_size=None):
 def classify_news_type(title: str) -> str:
     """根据标题判断新闻类型"""
     t = title.lower()
+    # Java 版本（优先级高）
     if "snapshot" in t:
         return "java_snapshot"
     if "pre-release" in t or "prerelease" in t:
         return "java_prerelease"
     if "release candidate" in t:
         return "java_rc"
-    if "beta" in t or "preview" in t:
+    # 基岩版本
+    if "beta" in t or "preview" in t or "预览" in t:
         return "bedrock_beta"
-    if "bedrock" in t:
+    if "bedrock" in t or "基岩" in t:
         return "bedrock_release"
-    if "java edition" in t or "java版" in t:
+    # Java 正式版
+    if "java edition" in t or "java版" in t or re.search(r'\b1\.\d+(\.\d+)?\b', t):
         return "java_release"
     return "other"
 
