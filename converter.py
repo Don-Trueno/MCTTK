@@ -100,7 +100,7 @@ class BBCodeRenderer:
                 if rendered:
                     out.append(rendered)
                 i += 1
-        return '\n'.join(out)
+        return '\n\n'.join(out)
 
     def _collect_li_chunk(self, blocks, start):
         chunk = []
@@ -119,9 +119,12 @@ class BBCodeRenderer:
             level = item.get('meta', {}).get('indent_level', 0)
             src = _md_links_to_bbcode(item.get('source_text', '').strip())
             tr = _md_links_to_bbcode(item.get('translated_text', '').strip())
+            closing_tags = ''
             while indent_stack and indent_stack[-1] > level:
-                lines.append('[/list]')
+                closing_tags += '[/list]'
                 indent_stack.pop()
+            if closing_tags:
+                lines.append(closing_tags)
             if not indent_stack or indent_stack[-1] < level:
                 lines.append('[list]')
                 indent_stack.append(level)
@@ -131,9 +134,10 @@ class BBCodeRenderer:
                 lines.append(f'[*]{tr}\n[color=#bcbcbc]{src}[/color]')
             else:
                 lines.append(f'[*]{tr or src}')
-        while indent_stack:
-            lines.append('[/list]')
-            indent_stack.pop()
+        closing = '[/list]' * len(indent_stack)
+        indent_stack.clear()
+        if closing:
+            lines.append(closing)
         return '\n'.join(lines)
 
     def _render_heading_bbcode(self, block):
@@ -144,7 +148,7 @@ class BBCodeRenderer:
             if main and sub and main == sub:
                 return main
             if main and sub:
-                return f'{main}\n[color=#bcbcbc]{sub}[/color]\n'
+                return f'{main}\n[color=#bcbcbc]{sub}[/color]'
             return main or sub or ''
         content = duo(tr, src)
         if btype in ('h1', 'h2'):
@@ -247,9 +251,9 @@ class MarkdownRenderer:
         tr = block.get('translated_text', '').strip()
         level_map = {'h1': '#', 'h2': '##', 'h3': '###', 'h4': '####'}
         prefix = level_map.get(btype, '#')
-        hr = '---\n\n' if btype in ('h1', 'h2') else ''
+        hr = '---\n' if btype in ('h1', 'h2') else ''
         text = tr or src
-        suffix = f'\n\n> {src}' if src and tr and src != tr else ''
+        suffix = f'\n> {src}' if src and tr and src != tr else ''
         return f'{hr}{prefix} {text}{suffix}'
 
     def _render_quote_md(self, block):
@@ -341,7 +345,7 @@ class J2MMConverter:
         article_type = _detect_article_type(json_data.get('title', ''))
 
         for m in self._get_modules('start', article_type):
-            parts.append(m['content'])
+            parts.append(m.get('bbcode_content') or m['content'])
 
         parts.append('[hr]')
         parts.append('[align=center][size=5][b]NEWS[/b][/size][/align]')
@@ -372,9 +376,9 @@ class J2MMConverter:
         parts.append('[hr]')
 
         for m in self._get_modules('custom', article_type):
-            parts.append(m['content'])
+            parts.append(m.get('bbcode_content') or m['content'])
         for m in self._get_modules('end', article_type):
-            parts.append(m['content'])
+            parts.append(m.get('bbcode_content') or m['content'])
 
         return '\n\n'.join(p for p in parts if p)
 
@@ -384,7 +388,8 @@ class J2MMConverter:
         article_type = _detect_article_type(json_data.get('title', ''))
 
         for m in self._get_modules('start', article_type):
-            parts.append(_bbcode_to_markdown(m['content']))
+            md_content = m.get('markdown_content')
+            parts.append(md_content if md_content is not None else _bbcode_to_markdown(m.get('bbcode_content') or m['content']))
 
         parts.append('---')
         parts.append('**NEWS**')
@@ -414,9 +419,11 @@ class J2MMConverter:
         parts.append('---')
 
         for m in self._get_modules('custom', article_type):
-            parts.append(_bbcode_to_markdown(m['content']))
+            md_content = m.get('markdown_content')
+            parts.append(md_content if md_content is not None else _bbcode_to_markdown(m.get('bbcode_content') or m['content']))
         for m in self._get_modules('end', article_type):
-            parts.append(_bbcode_to_markdown(m['content']))
+            md_content = m.get('markdown_content')
+            parts.append(md_content if md_content is not None else _bbcode_to_markdown(m.get('bbcode_content') or m['content']))
 
         return '\n\n'.join(p for p in parts if p)
 

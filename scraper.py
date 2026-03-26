@@ -80,14 +80,19 @@ DEFAULT_CONFIG = {
         "verify_ssl": False,
         "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36",
         "accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        "proxies": { "http": "", "https": "" }
+        "proxies": { "http": "", "https": "" },
+        "timeout": 120
     },
     "output": { "save_dir": "output" },
     "retry": {
         "translation": { "max_retries": 3, "wait_for_input": False },
         "download":    { "max_retries": 3, "wait_for_input": False }
     },
-    "concurrency": { "translation_workers": 3 }
+    "concurrency": {
+        "translation_workers": 3,
+        "batch_max_chars": 1000,
+        "batch_max_items": 10
+    }
 }
 
 
@@ -645,7 +650,7 @@ def get_latest_news_list(page_size=None):
         print(f"[API] 正在获取新闻列表 (pageSize={params['pageSize']})...")
         response = requests.get(
             api_url, params=params, headers=HEADERS_HTML,
-            timeout=120, verify=CFG["http"]["verify_ssl"], proxies=PROXIES
+            timeout=int(CFG["http"].get("timeout", 120)), verify=CFG["http"]["verify_ssl"], proxies=PROXIES
         )
         response.raise_for_status()
         result = response.json()
@@ -710,7 +715,7 @@ def parse_article_page(article_url):
         print(f"[解析] 获取文章: {article_url}")
         response = requests.get(
             article_url, headers=HEADERS_HTML,
-            timeout=120, verify=CFG["http"]["verify_ssl"], proxies=PROXIES
+            timeout=int(CFG["http"].get("timeout", 120)), verify=CFG["http"]["verify_ssl"], proxies=PROXIES
         )
         response.raise_for_status()
         soup = BeautifulSoup(response.text, "html.parser")
@@ -918,7 +923,9 @@ def translate_blocks(blocks: list) -> list:
 
     print(f"[翻译] 开始翻译 {len(items_to_translate)} 个文本块")
     max_workers = int(CFG.get("concurrency", {}).get("translation_workers", 3))
-    batches = _chunk_items_for_translation(items_to_translate)
+    batch_max_chars = int(CFG.get("concurrency", {}).get("batch_max_chars", 1000))
+    batch_max_items = int(CFG.get("concurrency", {}).get("batch_max_items", 10))
+    batches = _chunk_items_for_translation(items_to_translate, max_chars=batch_max_chars, max_items=batch_max_items)
     system_prompt = CFG["prompts"]["translate_blocks_system"]
     translate_idx_to_translation = {}
 
@@ -1029,7 +1036,7 @@ def download_header_image(image_url, save_path):
                 print(f"[下载] 第 {attempt} 次重试...")
             response = requests.get(
                 image_url, headers=HEADERS_HTML,
-                timeout=120, verify=CFG["http"]["verify_ssl"],
+                timeout=int(CFG["http"].get("timeout", 120)), verify=CFG["http"]["verify_ssl"],
                 proxies=PROXIES, stream=True
             )
             response.raise_for_status()

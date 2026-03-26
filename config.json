@@ -28,7 +28,8 @@
     "proxies": {
       "http": "",
       "https": ""
-    }
+    },
+    "timeout": 120
   },
   "output": {
     "save_dir": "output"
@@ -38,7 +39,9 @@
     "download":    { "max_retries": 3, "wait_for_input": false }
   },
   "concurrency": {
-    "translation_workers": 3
+    "translation_workers": 3,
+    "batch_max_chars": 1000,
+    "batch_max_items": 10
   },
   "news_types": {
     "java_release":    true,
