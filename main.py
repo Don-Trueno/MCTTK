@@ -83,7 +83,7 @@ def load_state(state_file: str) -> dict:
                 return json.load(f)
         except Exception:
             pass
-    return {"posted_urls": [], "last_run": None}
+    return {"posted_urls": [], "last_run": None, "_first_run": True}
 
 
 def save_state(state_file: str, state: dict):
@@ -158,6 +158,16 @@ def run_scrape(config: dict, state_file: str, dry_run: bool = False) -> list:
     # 检查已处理状态
     state = load_state(state_file)
     posted_urls = set(state.get("posted_urls", []))
+
+    # 首次运行：将所有新闻标记为已处理
+    if state.get("_first_run", False):
+        print(f"[主] 检测到首次运行，将当前 {len(all_news)} 条新闻标记为已处理")
+        posted_urls.update(n['url'] for n in all_news)
+        state["posted_urls"] = list(posted_urls)
+        state.pop("_first_run", None)
+        save_state(state_file, state)
+        return []
+
     new_news = [n for n in all_news if n['url'] not in posted_urls]
     if not new_news:
         print(f"[主] 没有新新闻（共 {len(all_news)} 条，已全部处理过）")

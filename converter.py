@@ -285,19 +285,24 @@ class MarkdownRenderer:
 
 def _detect_article_type(title: str) -> str:
     t = title or ''
-    if 'Snapshot' in t:
+    t_lower = t.lower()
+    # Java 版本（优先级高）
+    if 'snapshot' in t_lower:
         return 'java_snapshot'
-    if 'Pre-Release' in t or 'Pre Release' in t:
+    if 'pre-release' in t_lower or 'pre release' in t_lower or 'prerelease' in t_lower:
         return 'java_prerelease'
-    if 'Release Candidate' in t:
+    if 'release candidate' in t_lower:
         return 'java_rc'
-    if 'Beta' in t or 'Preview' in t:
+    # 基岩版本
+    if 'beta' in t_lower or 'preview' in t_lower or '预览' in t:
         return 'bedrock_beta'
-    if 'Bedrock' in t:
+    if 'bedrock' in t_lower or '基岩' in t:
         return 'bedrock_release'
-    if '时评' in t or 'Commentary' in t:
+    # 时评
+    if '时评' in t or 'commentary' in t_lower:
         return 'commentary'
-    if 'Java Edition' in t:
+    # Java 正式版
+    if 'java edition' in t_lower or 'java版' in t or re.search(r'\b1\.\d+(\.\d+)?\b', t):
         return 'java_release'
     return 'normal'
 
