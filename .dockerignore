@@ -1,10 +1,48 @@
-__pycache__
+# Git
+.git/
+.gitignore
+
+# Python
+__pycache__/
 *.pyc
 *.pyo
 *.pyd
-.git
-.gitignore
+*.egg-info/
+dist/
+build/
+
+# 虚拟环境
+venv/
+.venv/
+
+# 环境变量（敏感信息，通过 -e 或 docker-compose 传入）
 .env
-old/
+
+# 输出目录（运行时通过 volume 挂载，不打包进镜像）
+output/
+
+# 验证码临时文件
+captcha*.png
+
+# 调试与测试文件
+debug*.*
+test*.*
+
+# 文档
 *.md
-.vscode
+DOCKER.md
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# 历史版本
+old/
+
+# CI/CD
+.github/
+
+# 本文件自身
+.dockerignore
