@@ -60,6 +60,13 @@
     "transparent": "半透明(*)模式",
     "Lightmap": "光照贴图",
     "light levels": "光照等级",
-    "tick": "游戏刻(*)"
+    "tick": "游戏刻(*)",
+    "Potent Sulfur Block": "强效硫磺块",
+    "Potent Sulfur": "强效硫磺",
+    "Sulfur blocks": "硫磺块",
+    "Sulfur": "硫磺",
+    "Sulfur Cube": "硫磺怪",
+    "sulfur_cube": "硫磺怪",
+    "Gurgle": "幼年溺尸"
   }
 }
