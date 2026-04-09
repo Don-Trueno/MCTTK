@@ -12,15 +12,16 @@ poster.py — MCBBS 自动发帖模块（新闻模式 + 图片上传）
   news_xxx.jpg  → 题图（可选）
 """
 
+import argparse
+import contextlib
+import glob
+import json
 import os
 import re
 import sys
-import json
 import time
-import glob
-import argparse
-import requests
 
+import requests
 
 # ── 配置 ─────────────────────────────────────────────
 
@@ -84,7 +85,7 @@ def load_poster_config(config_path: str = None) -> dict:
 
     if os.path.exists(config_path):
         try:
-            with open(config_path, "r", encoding="utf-8") as f:
+            with open(config_path, encoding="utf-8") as f:
                 full_config = json.load(f)
             mcbbs = full_config.get("mcbbs", {})
             for key in cfg:
@@ -105,10 +106,8 @@ def load_poster_config(config_path: str = None) -> dict:
         val = os.environ.get(env_name)
         if val:
             if cfg_key == "forum_fid":
-                try:
+                with contextlib.suppress(ValueError):
                     val = int(val)
-                except ValueError:
-                    pass
             cfg[cfg_key] = val
 
     return cfg
@@ -134,7 +133,9 @@ def detect_module_type(message: str, title: str) -> str | None:
     if any(kw in title_lower for kw in ["bedrock", "基岩"]):
         return "bedrock_release"
     # Java 正式版（最后检测，避免误判）
-    if any(kw in title_lower for kw in ["minecraft java", "java edition", "java 版"]) or re.search(r'\b1\.\d+(\.\d+)?\b', title):
+    if any(kw in title_lower for kw in ["minecraft java", "java edition", "java 版"]) or re.search(
+        r'\b1\.\d+(\.\d+)?\b', title
+    ):
         return "java_release"
     return None
 
@@ -189,7 +190,7 @@ def _login_with_captcha(session, base_url, username, password, captcha_answer, r
     auth_m = re.search(r"auth=([A-Za-z0-9%/+]+)", r.text)
     if not auth_m:
         raise RuntimeError("无法提取 auth token")
-    from urllib.parse import unquote, quote
+    from urllib.parse import quote, unquote
     auth_token = unquote(auth_m.group(1))
 
     r_cap = session.get(
@@ -206,15 +207,16 @@ def _login_with_captcha(session, base_url, username, password, captcha_answer, r
     try:
         import ddddocr
         ocr = ddddocr.DdddOcr(show_ad=False)
-    except Exception:
+    except Exception:  # noqa: BLE001, S110
         pass
 
     def _preprocess_captcha(img_bytes: bytes) -> list:
         """对验证码图片做多种预处理，返回多个候选图片 bytes"""
         candidates = [img_bytes]
         try:
-            from PIL import Image, ImageFilter
             import io as _io
+
+            from PIL import Image, ImageFilter
             img = Image.open(_io.BytesIO(img_bytes))
             # 转灰度 + 二值化
             gray = img.convert("L")
@@ -228,7 +230,7 @@ def _login_with_captcha(session, base_url, username, password, captcha_answer, r
             buf2 = _io.BytesIO()
             sharp.save(buf2, format="PNG")
             candidates.append(buf2.getvalue())
-        except Exception:
+        except Exception:  # noqa: BLE001, S110
             pass
         return candidates
 
@@ -264,7 +266,7 @@ def _login_with_captcha(session, base_url, username, password, captcha_answer, r
                         ocr_results.append(raw)
                         tag = "原始" if idx == 0 else f"预处理#{idx}"
                         print(f"    OCR ({tag}): {raw}")
-                except Exception:
+                except Exception:  # noqa: BLE001, S110
                     pass
             # 去重后取第一个
             seen = set()
@@ -625,15 +627,15 @@ class MCBBSPoster:
                        attach_json: bool = True) -> str:
         """
         发布单个新闻文件（txt + json + 可选图片 + 可选 JSON 附件）
-        
+
         Args:
             attach_json: 是否将 JSON 文件作为附件上传并插入下载链接
-        
+
         Returns:
             帖子 URL
         """
         # 加载元数据
-        with open(json_path, "r", encoding="utf-8") as f:
+        with open(json_path, encoding="utf-8") as f:
             meta = json.load(f)
         title = meta.get("translated_title", "").strip()
         if not title:
@@ -642,7 +644,7 @@ class MCBBSPoster:
             raise ValueError(f"{json_path} 中找不到 title 字段")
         title = title + " [AI翻译]"
 
-        with open(txt_path, "r", encoding="utf-8") as f:
+        with open(txt_path, encoding="utf-8") as f:
             message = f.read().strip()
         if not message:
             raise ValueError(f"{txt_path} 内容为空")
@@ -663,7 +665,6 @@ class MCBBSPoster:
         if attach_json and os.path.exists(json_path):
             try:
                 json_aid = self.upload_file(json_path, mime_type="text/plain")  # Discuz 不接受 application/json
-                json_filename = os.path.basename(json_path)
                 message += f"\n\n[attach]{json_aid}[/attach]"
                 attachment_ids.append(json_aid)
             except Exception as e:
@@ -693,7 +694,7 @@ class MCBBSPoster:
 
 def load_posted(state_file: str) -> set:
     if os.path.exists(state_file):
-        with open(state_file, "r") as f:
+        with open(state_file) as f:
             return set(json.load(f))
     return set()
 
@@ -758,10 +759,10 @@ def main():
 
     if args.dry_run:
         for stem, txt_path, json_path in pending:
-            with open(json_path, "r", encoding="utf-8") as f:
+            with open(json_path, encoding="utf-8") as f:
                 meta = json.load(f)
             title = meta.get("title") or meta.get("translated_title", "")
-            with open(txt_path, "r", encoding="utf-8") as f:
+            with open(txt_path, encoding="utf-8") as f:
                 message = f.read().strip()
             img_path = find_image(news_dir, stem)
             module_type = detect_module_type(message, title)

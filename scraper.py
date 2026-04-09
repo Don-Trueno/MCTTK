@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 scraper.py — Minecraft 新闻爬取与翻译模块
 
@@ -12,18 +11,19 @@ scraper.py — Minecraft 新闻爬取与翻译模块
 配置：统一由 config.json 加载
 """
 
-import requests
+import contextlib
+import hashlib
 import json
 import os
 import re
-import urllib3
-import hashlib
 import time
-from datetime import datetime
-from pathlib import Path
-from urllib.parse import urljoin
-from bs4 import BeautifulSoup, NavigableString, Tag
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import datetime
+from urllib.parse import urljoin
+
+import requests
+import urllib3
+from bs4 import BeautifulSoup, NavigableString, Tag
 
 # 尝试导入 curl_cffi（用于 Feedback 网站爬取，绕过 Cloudflare）
 try:
@@ -78,7 +78,10 @@ DEFAULT_CONFIG = {
     },
     "http": {
         "verify_ssl": False,
-        "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36",
+        "user_agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36"
+        ),
         "accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
         "proxies": { "http": "", "https": "" },
         "timeout": 120
@@ -117,10 +120,10 @@ def load_config(config_path: str = None) -> dict:
     config = dict(DEFAULT_CONFIG)
     if os.path.exists(config_path):
         try:
-            with open(config_path, "r", encoding="utf-8") as f:
+            with open(config_path, encoding="utf-8") as f:
                 user_config = json.load(f)
             config = _deep_merge(config, user_config)
-        except (json.JSONDecodeError, IOError) as e:
+        except (OSError, json.JSONDecodeError) as e:
             print(f"[配置] 加载失败，使用默认配置: {e}")
     else:
         print(f"[配置] 配置文件不存在: {config_path}")
@@ -159,13 +162,13 @@ def load_glossary(glossary_path: str = None) -> dict:
         return {}
 
     try:
-        with open(glossary_path, "r", encoding="utf-8") as f:
+        with open(glossary_path, encoding="utf-8") as f:
             data = json.load(f)
         return {
             "terms": data.get("terms", {}),
             "placeholders": data.get("placeholders", {})
         }
-    except (json.JSONDecodeError, IOError) as e:
+    except (OSError, json.JSONDecodeError) as e:
         print(f"[词汇表] 加载失败: {e}")
         return {}
 
@@ -173,7 +176,7 @@ GLOSSARY = load_glossary()
 
 
 def _parse_pattern(pattern: str) -> tuple:
-    """
+    r"""
     解析模式字符串，返回 (基础词, 正则表达式, 是否有可选后缀)
 
     例如:
@@ -487,7 +490,10 @@ class FeedbackScraper:
         self.base_url = self.feedback_config.get('base_url', 'https://feedback.minecraft.net')
         self.timeout = self.feedback_config.get('timeout', 30)
         self.headers = {
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+            'Accept': (
+                'text/html,application/xhtml+xml,application/xml;q=0.9,'
+                'image/avif,image/webp,image/apng,*/*;q=0.8'
+            ),
             'Accept-Language': 'zh-CN,zh;q=0.9,en-US;q=0.8,en;q=0.7',
             'Accept-Encoding': 'gzip, deflate, br',
             'DNT': '1',
@@ -608,7 +614,6 @@ def convert_feedback_html_to_blocks(html_content, base_url=""):
 
 def process_feedback_news(news_item: dict, config: dict) -> dict:
     """完整处理单篇 Feedback 文章"""
-    import sys
     scraper = FeedbackScraper(config)
     article_content = scraper.fetch_article_content(news_item['url'])
     if not article_content:
@@ -848,7 +853,7 @@ def parse_article_page(article_url):
             text = re.sub(r"\s+", " ", text or "").strip()
             if not text:
                 return None
-            return hashlib.sha1(text.encode("utf-8")).hexdigest()
+            return hashlib.sha1(text.encode("utf-8")).hexdigest()  # noqa: S324
 
         candidates = []
         intro = soup.find("div", class_="article-text")
@@ -1057,30 +1062,23 @@ def translate_blocks(blocks: list) -> list:
         except json.JSONDecodeError:
             cleaned = re.sub(r"^```(?:json)?\s*", "", translated_result.strip())
             cleaned = re.sub(r"\s*```$", "", cleaned)
-            try:
+            with contextlib.suppress(json.JSONDecodeError):
                 parsed_result = json.loads(cleaned)
-            except json.JSONDecodeError:
-                pass
-
         batch_translations = {}
         if isinstance(parsed_result, list):
             for obj in parsed_result:
                 if isinstance(obj, dict) and "id" in obj and "translated_text" in obj:
                     tid = str(obj["id"])
                     if tid.startswith("t"):
-                        try:
+                        with contextlib.suppress(ValueError):
                             batch_translations[int(tid[1:])] = str(obj["translated_text"])
-                        except ValueError:
-                            pass
         else:
-            lines = [l.strip() for l in (translated_result or "").splitlines() if l.strip()]
-            for item, line in zip(batch, lines):
+            lines = [line.strip() for line in (translated_result or "").splitlines() if line.strip()]
+            for item, line in zip(batch, lines, strict=False):
                 tid = str(item["id"])
                 if tid.startswith("t"):
-                    try:
+                    with contextlib.suppress(ValueError):
                         batch_translations[int(tid[1:])] = line
-                    except ValueError:
-                        pass
 
         print(f"[翻译] 批次 {batch_index + 1}/{len(batches)} 完成: {len(batch_translations)} 项")
         return batch_translations
@@ -1217,7 +1215,7 @@ def save_article_json(data: dict, save_dir: str = None) -> str:
         with open(file_path, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
         print(f"[保存] JSON: {file_path}")
-    except IOError as e:
+    except OSError as e:
         print(f"[保存] 写入失败: {e}")
         return None
 
@@ -1231,7 +1229,7 @@ def save_article_json(data: dict, save_dir: str = None) -> str:
                 ext = url_path.rsplit(".", 1)[-1].lower()
                 if ext in ["jpg", "jpeg", "png", "gif", "webp"]:
                     image_ext = f".{ext}"
-        except Exception:
+        except Exception:  # noqa: BLE001, S110
             pass
         base_path = file_path.rsplit(".", 1)[0]
         image_path = base_path + image_ext
@@ -1245,10 +1243,10 @@ def save_article_json(data: dict, save_dir: str = None) -> str:
 def process_article(news_item: dict) -> dict:
     """
     完整处理单篇文章：解析 → 翻译 → 组装数据
-    
+
     Args:
         news_item: 新闻列表项，包含 url, title 等字段
-    
+
     Returns:
         完整的文章数据字典，失败返回 None
     """

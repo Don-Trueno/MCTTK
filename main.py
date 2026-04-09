@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 main.py — MCTTK 新闻自动爬取 + 翻译 + 转换 + 发布 编排器
 
@@ -20,11 +19,11 @@ main.py — MCTTK 新闻自动爬取 + 翻译 + 转换 + 发布 编排器
   环境变量覆盖：OPENAI_API_KEY, MCBBS_USERNAME, MCBBS_PASSWORD 等
 """
 
+import argparse
+import json
 import os
 import sys
-import json
 import time
-import argparse
 
 # 项目根目录
 PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -79,9 +78,9 @@ def load_state(state_file: str) -> dict:
     """加载处理状态"""
     if os.path.exists(state_file):
         try:
-            with open(state_file, "r", encoding="utf-8") as f:
+            with open(state_file, encoding="utf-8") as f:
                 return json.load(f)
-        except Exception:
+        except Exception:  # noqa: BLE001, S110
             pass
     return {"posted_urls": [], "last_run": None, "_first_run": True}
 
@@ -98,15 +97,12 @@ def save_state(state_file: str, state: dict):
 def run_scrape(config: dict, state_file: str, dry_run: bool = False) -> list:
     """
     执行爬取流程：获取新闻（API + Feedback） → 过滤类型 → 检查状态 → 翻译 → 保存
-    
+
     Returns:
         已处理的文章 (stem, txt_path, json_path) 列表
     """
-    from scraper import (
-        get_latest_news_list, process_article, save_article_json,
-        FeedbackScraper, process_feedback_news
-    )
     from converter import convert_json_file
+    from scraper import FeedbackScraper, get_latest_news_list, process_article, process_feedback_news, save_article_json
 
     save_dir = config["output"]["save_dir"]
     os.makedirs(save_dir, exist_ok=True)
@@ -134,7 +130,8 @@ def run_scrape(config: dict, state_file: str, dry_run: bool = False) -> list:
                     article['section_cn'] = section_data['name_cn']
                     # Feedback 文章 URL 需要补全
                     if article['url'].startswith('/'):
-                        article['url'] = feedback_config.get('base_url', 'https://feedback.minecraft.net') + article['url']
+                        base = feedback_config.get('base_url', 'https://feedback.minecraft.net')
+                        article['url'] = base + article['url']
                     # 用 section_cn + title 作为 display title
                     if not article.get('release_date'):
                         article['release_date'] = ''
@@ -194,10 +191,7 @@ def run_scrape(config: dict, state_file: str, dry_run: bool = False) -> list:
 
         try:
             # 根据来源选择处理方式
-            if source == 'feedback':
-                full_data = process_feedback_news(news, config)
-            else:
-                full_data = process_article(news)
+            full_data = process_feedback_news(news, config) if source == 'feedback' else process_article(news)
             if not full_data:
                 print("[主] 文章处理失败，跳过")
                 continue
@@ -212,7 +206,11 @@ def run_scrape(config: dict, state_file: str, dry_run: bool = False) -> list:
             base_path = json_path.rsplit(".", 1)[0]
             try:
                 modules_cfg_path = os.path.join(PROJECT_DIR, "modules_config.json")
-                modules_cfg = json.load(open(modules_cfg_path, encoding="utf-8")) if os.path.exists(modules_cfg_path) else None
+                if os.path.exists(modules_cfg_path):
+                    with open(modules_cfg_path, encoding="utf-8") as _f:
+                        modules_cfg = json.load(_f)
+                else:
+                    modules_cfg = None
                 bbcode_path, md_path = convert_json_file(json_path, output_prefix=base_path, modules_config=modules_cfg)
             except Exception as e:
                 print(f"[主] 转换失败: {e}")
@@ -239,7 +237,7 @@ def run_scrape(config: dict, state_file: str, dry_run: bool = False) -> list:
 
 def run_post(processed: list, config: dict, no_image: bool = False, no_json: bool = False):
     """执行发布流程"""
-    from poster import MCBBSPoster, load_posted, save_posted, load_poster_config
+    from poster import MCBBSPoster, load_posted, load_poster_config, save_posted
     if not config.get("mcbbs", {}).get("enabled", False):
         print("[主] MCBBS 发布未启用（config.json 中 mcbbs.enabled = false）")
         return
@@ -281,7 +279,7 @@ def run_post(processed: list, config: dict, no_image: bool = False, no_json: boo
 
 def run_post_only(config: dict):
     """仅发布 output 目录中未发布的文件"""
-    from poster import MCBBSPoster, load_posted, save_posted, find_image, load_poster_config
+    from poster import MCBBSPoster, load_posted, load_poster_config, save_posted
     mcbbs_config = load_poster_config()
     if not config.get("mcbbs", {}).get("enabled", False):
         print("[主] MCBBS 发布未启用")
@@ -405,9 +403,9 @@ def main():
             print(f"{'=' * 60}")
             run_post(processed, config, no_image=args.no_image, no_json=args.no_json)
         elif processed and args.scrape_only:
-            print(f"\n[主] Scrape-only 模式，跳过发布")
+            print("\n[主] Scrape-only 模式，跳过发布")
         elif not processed:
-            print(f"\n[主] 没有新内容需要处理")
+            print("\n[主] 没有新内容需要处理")
 
     print(f"\n{'=' * 60}")
     print("  完成！")

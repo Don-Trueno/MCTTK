@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Docker 定时调度器 - 每 10 分钟运行一次 main.py"""
 
-import time
-import subprocess
 import gc
+import subprocess
 import sys
+import time
 
 INTERVAL = 600  # 10 分钟
 

@@ -1,0 +1,24 @@
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle errors
+    "W",    # pycodestyle warnings
+    "F",    # pyflakes
+    "B",    # flake8-bugbear (catches broad except, mutable defaults 等)
+    "I",    # isort
+    "UP",   # pyupgrade
+    "S",    # flake8-bandit (安全检查)
+    "SIM",  # flake8-simplify
+]
+ignore = [
+    "S101",   # assert 用在测试没问题
+    "S501",   # verify=False 是有意为之
+]
+
+[dependency-groups]
+dev = [
+    "ruff>=0.15.9",
+]
