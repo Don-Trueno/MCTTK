@@ -14,6 +14,7 @@ services:
       - ./scraper.py:/app/scraper.py
       - ./converter.py:/app/converter.py
       - ./poster.py:/app/poster.py
+      - ./utils.py:/app/utils.py
       - ./scheduler.py:/app/scheduler.py
       - ./init_state.py:/app/init_state.py
     environment:
