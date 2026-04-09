@@ -126,8 +126,13 @@ pip install curl_cffi        # Feedback 爬虫
 OPENAI_API_KEY=sk-xxx
 MCBBS_USERNAME=your_username
 MCBBS_PASSWORD=your_password
-MCBBS_CAPTCHA_ANSWER=备用验证码
+MCBBS_CAPTCHA_ANSWER=备用验证码   # 注意：该项请勿在.env中配置，当前版本未启用
 ```
+
+MCBBS_CAPTCHA_ANSWER 仅作占位，未来添加安全回答验证时使用
+
+当前版本下配置后，会导致验证码输出错误
+
 
 ### 3. 运行
 
@@ -357,7 +362,7 @@ Minecraft 官方 API          Feedback 网站
 | `OPENAI_API_KEY` | AI 翻译 API 密钥 |
 | `MCBBS_USERNAME` | MCBBS 论坛用户名 |
 | `MCBBS_PASSWORD` | MCBBS 论坛密码 |
-| `MCBBS_CAPTCHA_ANSWER` | 验证码备用答案（可选） |
+| `MCBBS_CAPTCHA_ANSWER` | 验证码备用答案（未启用） |
 
 Workflow 默认每 6 小时运行一次（UTC 0:00, 6:00, 12:00, 18:00），也可手动触发。
 
