@@ -2,6 +2,15 @@
 name = "mcttk"
 version = "0.1.0"
 requires-python = ">=3.13"
+dependencies = [
+    "requests>=2.31",
+    "beautifulsoup4>=4.12",
+    "urllib3>=2.0",
+]
+
+[project.optional-dependencies]
+captcha = ["ddddocr>=1.4", "Pillow>=10.0"]
+feedback = ["curl_cffi>=0.7"]
 
 [tool.ruff]
 line-length = 120
