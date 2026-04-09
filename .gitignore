@@ -6,9 +6,12 @@ output/*.jpeg
 output/*.png
 output/*.gif
 output/*.webp
+output/*.json
+
+# 注意：.posted.json *会* 被 git 跟踪
+# 注意：.state.json 不会 被 git 跟踪
 
 old/
-# 注意：.state.json 和 .posted.json 会被 git 跟踪
 
 # 验证码临时文件
 captcha.png
@@ -22,11 +25,6 @@ __pycache__/
 dist/
 build/
 
-# 根目录下的调试文件不提交
-debug*.*
-test*.*
-glossary_*.json
-
 # IDE
 .vscode/
 .idea/
@@ -38,5 +36,10 @@ glossary_*.json
 venv/
 .venv/
 
-# 测试文件夹下的调试文件需要提交
+# 根目录下的调试文件不提交
+debug*.*
+test*.*
+glossary_*.json
+
+# 测试文件夹下的调试文件*需要*提交
 !tests/test_*.*

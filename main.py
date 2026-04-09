@@ -27,11 +27,24 @@ import sys
 import time
 import traceback
 
+from converter import convert_json_file
+from scraper import (
+    FeedbackScraper,
+    classify_news_type,
+    download_header_image,
+    get_latest_news_list,
+    load_config,
+    process_article,
+    process_feedback_news,
+    save_article_json,
+)
+from utils import load_dotenv
+
 # 项目根目录
 PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
 
-# 自动加载 .env 文件（本地开发用，不影响 GitHub Actions）
-from utils import load_dotenv  # noqa: E402
+# 项目根目录
+PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
 
 load_dotenv(PROJECT_DIR)
 
@@ -39,13 +52,11 @@ load_dotenv(PROJECT_DIR)
 def load_main_config() -> dict:
     """加载统一配置"""
     config_path = os.path.join(PROJECT_DIR, "config.json")
-    from scraper import load_config
     return load_config(config_path)
 
 
 def filter_news_by_types(news_list: list, config: dict) -> list:
     """按配置的 news_types 过滤新闻"""
-    from scraper import classify_news_type
     news_types = config.get("news_types", {})
     # 如果没有配置 news_types 或全部为 true，不过滤
     if not news_types or all(news_types.values()):
@@ -86,29 +97,10 @@ def save_state(state_file: str, state: dict):
         json.dump(state, f, ensure_ascii=False, indent=2)
 
 
-def run_scrape(config: dict, state_file: str, dry_run: bool = False) -> list:
-    """
-    执行爬取流程：获取新闻（API + Feedback） → 过滤类型 → 检查状态 → 翻译 → 保存
-
-    Returns:
-        已处理的文章 (stem, txt_path, json_path) 列表
-    """
-    from converter import convert_json_file
-    from scraper import (
-        FeedbackScraper,
-        classify_news_type,
-        get_latest_news_list,
-        process_article,
-        process_feedback_news,
-        save_article_json,
-    )
-
-    save_dir = config["output"]["save_dir"]
-    os.makedirs(save_dir, exist_ok=True)
-
+def _fetch_all_news(config: dict) -> list:
+    """获取所有来源的新闻（API + Feedback），合并返回"""
     all_news = []
 
-    # ── 1. Minecraft 官方 API 新闻 ──
     page_size = config.get("minecraft_api", {}).get("pageSize", 10)
     api_news = get_latest_news_list(page_size=page_size, config=config)
     for news in api_news:
@@ -116,7 +108,6 @@ def run_scrape(config: dict, state_file: str, dry_run: bool = False) -> list:
     all_news.extend(api_news)
     print(f"[主] API 新闻: {len(api_news)} 条")
 
-    # ── 2. Feedback 网站新闻 ──
     feedback_config = config.get('feedback_site', {})
     if feedback_config.get('enabled', False):
         try:
@@ -127,11 +118,9 @@ def run_scrape(config: dict, state_file: str, dry_run: bool = False) -> list:
                     article['_source'] = 'feedback'
                     article['section'] = section_name
                     article['section_cn'] = section_data['name_cn']
-                    # Feedback 文章 URL 需要补全
                     if article['url'].startswith('/'):
                         base = feedback_config.get('base_url', 'https://feedback.minecraft.net')
                         article['url'] = base + article['url']
-                    # 用 section_cn + title 作为 display title
                     if not article.get('release_date'):
                         article['release_date'] = ''
                     all_news.append(article)
@@ -141,30 +130,100 @@ def run_scrape(config: dict, state_file: str, dry_run: bool = False) -> list:
         except Exception as e:
             print(f"[主] Feedback 获取失败: {e}")
 
+    return all_news
+
+
+def _filter_and_check_state(all_news: list, config: dict, state_file: str):
+    """
+    类型过滤 + 加载状态 + 首次运行检测 + 过滤已处理。
+
+    Returns:
+        (new_news, state, posted_urls) 或 None（首次运行/无新内容时）
+    """
+    api_items = [n for n in all_news if n.get('_source') == 'minecraft_api']
+    feedback_items = [n for n in all_news if n.get('_source') == 'feedback']
+    filtered_api = filter_news_by_types(api_items, config)
+    filtered = filtered_api + feedback_items
+
+    state = load_state(state_file)
+    posted_urls = set(state.get("posted_urls", []))
+
+    if state.get("_first_run", False):
+        print(f"[主] 检测到首次运行，将当前 {len(filtered)} 条新闻标记为已处理")
+        posted_urls.update(n['url'] for n in filtered)
+        state["posted_urls"] = list(posted_urls)
+        state.pop("_first_run", None)
+        save_state(state_file, state)
+        return None
+
+    new_news = [n for n in filtered if n['url'] not in posted_urls]
+    return new_news, state, posted_urls
+
+
+def _process_single_article(news: dict, config: dict, save_dir: str, modules_cfg) -> tuple | None:
+    """
+    处理单篇文章：解析 → 翻译 → 保存 JSON → 下载头图 → 转换。
+
+    Returns:
+        (stem, bbcode_path, json_path) 或 None
+    """
+    source = news.get('_source', 'minecraft_api')
+    full_data = process_feedback_news(news, config) if source == 'feedback' else process_article(news, config=config)
+    if not full_data:
+        print("[主] 文章处理失败，跳过")
+        return None
+
+    json_path = save_article_json(full_data, save_dir=save_dir, config=config)
+    if not json_path:
+        print("[主] JSON 保存失败，跳过")
+        return None
+
+    # 下载头图（与 JSON 同名）
+    header_image_url = full_data.get("header_image_url", "")
+    if header_image_url:
+        image_ext = ".jpg"
+        try:
+            url_path = header_image_url.split("?")[0]
+            if "." in url_path:
+                ext = url_path.rsplit(".", 1)[-1].lower()
+                if ext in ["jpg", "jpeg", "png", "gif", "webp"]:
+                    image_ext = f".{ext}"
+        except Exception:  # noqa: BLE001
+            logging.debug("图片扩展名解析失败，使用默认 .jpg", exc_info=True)
+        base_path = json_path.rsplit(".", 1)[0]
+        download_header_image(header_image_url, base_path + image_ext, config=config)
+
+    base_path = json_path.rsplit(".", 1)[0]
+    try:
+        bbcode_path, _ = convert_json_file(json_path, output_prefix=base_path, modules_config=modules_cfg)
+    except Exception as e:
+        print(f"[主] 转换失败: {e}")
+        return None
+
+    stem = os.path.basename(base_path)
+    return stem, bbcode_path, json_path
+
+
+def run_scrape(config: dict, state_file: str, dry_run: bool = False) -> list:
+    """
+    执行爬取流程：获取新闻 → 过滤类型 → 检查状态 → 翻译 → 保存
+
+    Returns:
+        已处理的文章 (stem, txt_path, json_path) 列表
+    """
+    save_dir = config["output"]["save_dir"]
+    os.makedirs(save_dir, exist_ok=True)
+
+    all_news = _fetch_all_news(config)
     if not all_news:
         print("[主] 未获取到任何新闻")
         return []
 
-    # 按类型过滤（仅对 API 新闻生效，Feedback 不过滤）
-    api_items = [n for n in all_news if n.get('_source') == 'minecraft_api']
-    feedback_items = [n for n in all_news if n.get('_source') == 'feedback']
-    filtered_api = filter_news_by_types(api_items, config)
-    all_news = filtered_api + feedback_items
-
-    # 检查已处理状态
-    state = load_state(state_file)
-    posted_urls = set(state.get("posted_urls", []))
-
-    # 首次运行：将所有新闻标记为已处理
-    if state.get("_first_run", False):
-        print(f"[主] 检测到首次运行，将当前 {len(all_news)} 条新闻标记为已处理")
-        posted_urls.update(n['url'] for n in all_news)
-        state["posted_urls"] = list(posted_urls)
-        state.pop("_first_run", None)
-        save_state(state_file, state)
+    result = _filter_and_check_state(all_news, config, state_file)
+    if result is None:
         return []
+    new_news, state, posted_urls = result
 
-    new_news = [n for n in all_news if n['url'] not in posted_urls]
     if not new_news:
         print(f"[主] 没有新新闻（共 {len(all_news)} 条，已全部处理过）")
         return []
@@ -180,7 +239,12 @@ def run_scrape(config: dict, state_file: str, dry_run: bool = False) -> list:
             print(f"     {news['url']}")
         return []
 
-    # 逐篇处理
+    modules_cfg_path = os.path.join(PROJECT_DIR, "modules_config.json")
+    modules_cfg = None
+    if os.path.exists(modules_cfg_path):
+        with open(modules_cfg_path, encoding="utf-8") as f:
+            modules_cfg = json.load(f)
+
     processed = []
     for i, news in enumerate(new_news, 1):
         source = news.get('_source', 'minecraft_api')
@@ -189,46 +253,12 @@ def run_scrape(config: dict, state_file: str, dry_run: bool = False) -> list:
         print(f"{'=' * 60}")
 
         try:
-            # 根据来源选择处理方式
-            if source == 'feedback':
-                full_data = process_feedback_news(news, config)
-            else:
-                full_data = process_article(news, config=config)
-            if not full_data:
-                print("[主] 文章处理失败，跳过")
-                continue
-
-            # 保存 JSON
-            json_path = save_article_json(full_data, save_dir=save_dir, config=config)
-            if not json_path:
-                print("[主] JSON 保存失败，跳过")
-                continue
-
-            # 转换为 BBCode 和 Markdown
-            base_path = json_path.rsplit(".", 1)[0]
-            try:
-                modules_cfg_path = os.path.join(PROJECT_DIR, "modules_config.json")
-                if os.path.exists(modules_cfg_path):
-                    with open(modules_cfg_path, encoding="utf-8") as _f:
-                        modules_cfg = json.load(_f)
-                else:
-                    modules_cfg = None
-                bbcode_path, md_path = convert_json_file(json_path, output_prefix=base_path, modules_config=modules_cfg)
-            except Exception as e:
-                print(f"[主] 转换失败: {e}")
-                # 即使转换失败，JSON 已保存，继续处理
-                bbcode_path = None
-
-            stem = os.path.basename(base_path)
-
-            # 标记为已处理（即使发布失败，也不重复爬取翻译）
+            item = _process_single_article(news, config, save_dir, modules_cfg)
             posted_urls.add(news['url'])
             state["posted_urls"] = list(posted_urls)
             save_state(state_file, state)
-
-            if bbcode_path:
-                processed.append((stem, bbcode_path, json_path))
-
+            if item:
+                processed.append(item)
         except Exception as e:
             print(f"[主] 处理异常: {e}")
             traceback.print_exc()

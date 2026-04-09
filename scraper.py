@@ -14,9 +14,9 @@ scraper.py — Minecraft 新闻爬取与翻译模块
 import contextlib
 import hashlib
 import json
-import logging
 import os
 import re
+import sys
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
@@ -139,18 +139,24 @@ def load_config(config_path: str = None) -> dict:
     return config
 
 
-# ── 全局配置 ─────────────────────────────────────────
+# ── 懒加载全局配置 ────────────────────────────────────
 
-CFG = load_config()
+_CFG = None
+_GLOSSARY = None
 
-PROXIES = CFG["http"].get("proxies")
-if PROXIES and not any(PROXIES.values()):
-    PROXIES = None
 
-HEADERS_HTML = {
-    "User-Agent": CFG["http"]["user_agent"],
-    "Accept": CFG["http"]["accept"]
-}
+def _get_cfg() -> dict:
+    global _CFG
+    if _CFG is None:
+        _CFG = load_config()
+    return _CFG
+
+
+def _get_glossary() -> dict:
+    global _GLOSSARY
+    if _GLOSSARY is None:
+        _GLOSSARY = load_glossary()
+    return _GLOSSARY
 
 # ── 词汇表加载 ─────────────────────────────────────────
 def load_glossary(glossary_path: str = None) -> dict:
@@ -172,8 +178,6 @@ def load_glossary(glossary_path: str = None) -> dict:
         print(f"[词汇表] 加载失败: {e}")
         return {}
 
-GLOSSARY = load_glossary()
-
 
 def _make_proxies(cfg: dict):
     """从配置中提取代理设置，全为空时返回 None"""
@@ -194,13 +198,12 @@ def _parse_pattern(pattern: str) -> tuple:
     - "undead * (mobs)" -> ("undead", r"undead\s+\w+(?:\s+mobs)?", True)
     - "baby *" -> ("baby", r"baby(?:\s+\w+)?", False)
     """
-    import re as regex_module
 
     # 提取可选后缀 (xxx)
     optional_suffix = ""
     has_optional = False
     if pattern.endswith(")"):
-        match = regex_module.search(r'\(([^)]+)\)$', pattern)
+        match = re.search(r'\(([^)]+)\)$', pattern)
         if match:
             optional_suffix = match.group(1)
             pattern = pattern[:match.start()].strip()
@@ -213,14 +216,14 @@ def _parse_pattern(pattern: str) -> tuple:
     # 构建正则表达式
     if star_count == 0:
         # 无通配符，精确匹配
-        regex_pattern = regex_module.escape(pattern)
+        regex_pattern = re.escape(pattern)
     else:
         parts = pattern.split("*")
         regex_parts = []
         for i, part in enumerate(parts):
             part = part.strip()
             if part:
-                regex_parts.append(regex_module.escape(part))
+                regex_parts.append(re.escape(part))
             if i < len(parts) - 1:  # 不是最后一个
                 # * 匹配 0-1 个词
                 regex_parts.append(r"(?:\s+\w+)?")
@@ -228,7 +231,7 @@ def _parse_pattern(pattern: str) -> tuple:
 
     # 添加可选后缀
     if has_optional:
-        regex_pattern += r"(?:\s+" + regex_module.escape(optional_suffix) + r")?"
+        regex_pattern += r"(?:\s+" + re.escape(optional_suffix) + r")?"
 
     return (base_term, regex_pattern, has_optional)
 
@@ -252,7 +255,6 @@ def find_relevant_terms(text: str, glossary: dict) -> dict:
     if not terms:
         return {}
 
-    import re as regex_module
     text_lower = text.lower()
     matches = []
 
@@ -261,7 +263,7 @@ def find_relevant_terms(text: str, glossary: dict) -> dict:
         base_term, regex_pattern, _ = _parse_pattern(en_term)
 
         # 使用正则匹配
-        for match in regex_module.finditer(regex_pattern, text_lower, regex_module.IGNORECASE):
+        for match in re.finditer(regex_pattern, text_lower, re.IGNORECASE):
             start, end = match.span()
             matches.append((start, end, base_term, zh_term))
 
@@ -673,8 +675,8 @@ def translate_text(text, system_prompt=None, use_glossary=True, config=None, glo
         config: 配置字典，None 时使用模块级 CFG
         glossary: 词汇表字典，None 时使用模块级 GLOSSARY
     """
-    cfg = config or CFG
-    gls = glossary if glossary is not None else GLOSSARY
+    cfg = config or _get_cfg()
+    gls = glossary if glossary is not None else _get_glossary()
     system_prompt = system_prompt or cfg["prompts"]["translate_text_default"]
 
     # 动态添加相关术语到提示词
@@ -758,7 +760,7 @@ def translate_text(text, system_prompt=None, use_glossary=True, config=None, glo
 
 def get_latest_news_list(page_size=None, config=None):
     """通过 Minecraft 官方 API 获取最新新闻列表"""
-    cfg = config or CFG
+    cfg = config or _get_cfg()
     api_url = cfg["minecraft_api"]["search_url"]
     params = {
         "pageSize": page_size or cfg["minecraft_api"]["pageSize"],
@@ -807,23 +809,8 @@ def get_latest_news_list(page_size=None, config=None):
 
 def classify_news_type(title: str) -> str:
     """根据标题判断新闻类型"""
-    t = title.lower()
-    # Java 版本（优先级高）
-    if "snapshot" in t:
-        return "java_snapshot"
-    if "pre-release" in t or "prerelease" in t:
-        return "java_prerelease"
-    if "release candidate" in t:
-        return "java_rc"
-    # 基岩版本
-    if "beta" in t or "preview" in t or "预览" in t:
-        return "bedrock_beta"
-    if "bedrock" in t or "基岩" in t:
-        return "bedrock_release"
-    # Java 正式版
-    if "java edition" in t or "java版" in t or re.search(r'\b1\.\d+(\.\d+)?\b', t):
-        return "java_release"
-    return "other"
+    from utils import classify_article_type
+    return classify_article_type(title, fallback="other")
 
 
 # ── 文章解析 ─────────────────────────────────────────
@@ -832,7 +819,7 @@ def parse_article_page(article_url, config=None):
     """解析 Minecraft 新闻文章页面"""
     if not article_url:
         return None
-    cfg = config or CFG
+    cfg = config or _get_cfg()
     headers = _make_headers(cfg)
     proxies = _make_proxies(cfg)
 
@@ -1031,8 +1018,8 @@ def translate_blocks(blocks: list, config=None, glossary=None) -> list:
     """批量翻译内容块"""
     if not blocks:
         return blocks
-    cfg = config or CFG
-    gls = glossary if glossary is not None else GLOSSARY
+    cfg = config or _get_cfg()
+    gls = glossary if glossary is not None else _get_glossary()
 
     for block in blocks:
         if block.get("type") == "pre":
@@ -1157,7 +1144,7 @@ def download_header_image(image_url, save_path, config=None):
     """下载文章头图"""
     if not image_url:
         return False
-    cfg = config or CFG
+    cfg = config or _get_cfg()
     headers = _make_headers(cfg)
     proxies = _make_proxies(cfg)
     max_retries = int(cfg.get("retry", {}).get("download", {}).get("max_retries", 3))
@@ -1199,7 +1186,7 @@ def save_article_json(data: dict, save_dir: str = None, config=None) -> str:
     """
     if not data:
         return None
-    cfg = config or CFG
+    cfg = config or _get_cfg()
     save_dir = save_dir or cfg["output"]["save_dir"]
     os.makedirs(save_dir, exist_ok=True)
 
@@ -1249,22 +1236,6 @@ def save_article_json(data: dict, save_dir: str = None, config=None) -> str:
         print(f"[保存] 写入失败: {e}")
         return None
 
-    # 下载头图（与 JSON 同名）
-    header_image_url = data.get("header_image_url", "")
-    if header_image_url:
-        image_ext = ".jpg"
-        try:
-            url_path = header_image_url.split("?")[0]
-            if "." in url_path:
-                ext = url_path.rsplit(".", 1)[-1].lower()
-                if ext in ["jpg", "jpeg", "png", "gif", "webp"]:
-                    image_ext = f".{ext}"
-        except Exception:  # noqa: BLE001
-            logging.debug("图片扩展名解析失败，使用默认 .jpg", exc_info=True)
-        base_path = file_path.rsplit(".", 1)[0]
-        image_path = base_path + image_ext
-        download_header_image(header_image_url, image_path, config=cfg)
-
     return file_path
 
 
@@ -1281,8 +1252,7 @@ def process_article(news_item: dict, config=None) -> dict:
     Returns:
         完整的文章数据字典，失败返回 None
     """
-    import sys
-    cfg = config or CFG
+    cfg = config or _get_cfg()
 
     print(f"\n[处理] {news_item['title']}")
     sys.stdout.flush()

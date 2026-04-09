@@ -15,6 +15,8 @@ import re
 from datetime import datetime
 from pathlib import Path
 
+from utils import MODULE_TYPE_MAP
+
 # ── 工具函数 ─────────────────────────────────────────
 
 def _md_links_to_bbcode(text: str) -> str:
@@ -47,6 +49,7 @@ def _parse_date(date_str: str) -> str:
 
 def _bbcode_to_markdown(bbcode: str) -> str:
     text = bbcode
+    # 最多处理 5 层嵌套 BBCode；超过 5 层的嵌套会��默保留原始标签
     for _ in range(5):
         text = re.sub(r'\[b\](.*?)\[/b\]', r'**\1**', text, flags=re.DOTALL)
         text = re.sub(r'\[i\](.*?)\[/i\]', r'*\1*', text, flags=re.DOTALL)
@@ -287,47 +290,8 @@ class MarkdownRenderer:
 # ── 文章类型检测 ─────────────────────────────────────
 
 def _detect_article_type(title: str) -> str:
-    t = title or ''
-    t_lower = t.lower()
-    # Java 版本（优先级高）
-    if 'snapshot' in t_lower:
-        return 'java_snapshot'
-    if 'pre-release' in t_lower or 'pre release' in t_lower or 'prerelease' in t_lower:
-        return 'java_prerelease'
-    if 'release candidate' in t_lower:
-        return 'java_rc'
-    # 基岩版本
-    if 'beta' in t_lower or 'preview' in t_lower or '预览' in t:
-        return 'bedrock_beta'
-    if 'bedrock' in t_lower or '基岩' in t:
-        return 'bedrock_release'
-    # 时评
-    if '时评' in t or 'commentary' in t_lower:
-        return 'commentary'
-    # Java 正式版
-    if 'java edition' in t_lower or 'java版' in t or re.search(r'\b1\.\d+(\.\d+)?\b', t):
-        return 'java_release'
-    return 'normal'
-
-
-_MODULE_TYPE_MAP = {
-    'module_java_snapshot_header': 'java_snapshot',
-    'module_java_snapshot_footer': 'java_snapshot',
-    'module_java_prerelease_header': 'java_prerelease',
-    'module_java_prerelease_footer': 'java_prerelease',
-    'module_java_rc_header': 'java_rc',
-    'module_java_rc_footer': 'java_rc',
-    'module_java_release_header': 'java_release',
-    'module_java_release_footer': 'java_release',
-    'module_bedrock_beta_header': 'bedrock_beta',
-    'module_bedrock_beta_footer': 'bedrock_beta',
-    'module_bedrock_release_header': 'bedrock_release',
-    'module_bedrock_release_footer': 'bedrock_release',
-    'module_commentary_header': 'commentary',
-    'module_commentary_footer': 'commentary',
-    'module_normal_header': 'normal',
-    'module_normal_footer': 'normal',
-}
+    from utils import classify_article_type
+    return classify_article_type(title, commentary=True, fallback='normal')
 
 
 # ── 主转换器 ─────────────────────────────────────────
@@ -437,7 +401,7 @@ class J2MMConverter:
         for m in cfg.get('default_modules', []):
             if m.get('position') != position:
                 continue
-            if m.get('enabled') or _MODULE_TYPE_MAP.get(m.get('id', '')) == article_type:
+            if m.get('enabled') or MODULE_TYPE_MAP.get(m.get('id', '')) == article_type:
                 modules.append(m)
         return sorted(modules, key=lambda m: m.get('order', 9999))
 

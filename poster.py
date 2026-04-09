@@ -24,29 +24,11 @@ import time
 
 import requests
 
+from utils import MODULE_TYPE_MAP
+
 # ── 配置 ─────────────────────────────────────────────
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-
-# 模块类型 → 分类关键词
-_MODULE_TYPE_MAP = {
-    'module_java_snapshot_header': 'java_snapshot',
-    'module_java_snapshot_footer': 'java_snapshot',
-    'module_java_prerelease_header': 'java_prerelease',
-    'module_java_prerelease_footer': 'java_prerelease',
-    'module_java_rc_header': 'java_rc',
-    'module_java_rc_footer': 'java_rc',
-    'module_java_release_header': 'java_release',
-    'module_java_release_footer': 'java_release',
-    'module_bedrock_beta_header': 'bedrock_beta',
-    'module_bedrock_beta_footer': 'bedrock_beta',
-    'module_bedrock_release_header': 'bedrock_release',
-    'module_bedrock_release_footer': 'bedrock_release',
-    'module_commentary_header': 'commentary',
-    'module_commentary_footer': 'commentary',
-    'module_normal_header': 'normal',
-    'module_normal_footer': 'normal',
-}
 
 _CATEGORY_GROUP = {
     'java_snapshot': 'Java资讯',
@@ -117,28 +99,11 @@ def load_poster_config(config_path: str = None) -> dict:
 # ── 辅助函数 ─────────────────────────────────────────
 
 def detect_module_type(message: str, title: str) -> str | None:
-    for tag, category in _MODULE_TYPE_MAP.items():
+    for tag, category in MODULE_TYPE_MAP.items():
         if f"[{tag}]" in message:
             return category
-    title_lower = title.lower()
-    # Java 版本检测（优先级高）
-    if any(kw in title_lower for kw in ["snapshot", "快照"]):
-        return "java_snapshot"
-    if any(kw in title_lower for kw in ["pre-release", "prerelease", "预发布"]):
-        return "java_prerelease"
-    if any(kw in title_lower for kw in ["release candidate", "候选"]):
-        return "java_rc"
-    # 基岩版本检测
-    if any(kw in title_lower for kw in ["beta", "preview", "预览"]):
-        return "bedrock_beta"
-    if any(kw in title_lower for kw in ["bedrock", "基岩"]):
-        return "bedrock_release"
-    # Java 正式版（最后检测，避免误判）
-    if any(kw in title_lower for kw in ["minecraft java", "java edition", "java 版"]) or re.search(
-        r'\b1\.\d+(\.\d+)?\b', title
-    ):
-        return "java_release"
-    return None
+    from utils import classify_article_type
+    return classify_article_type(title, chinese=True, fallback=None)
 
 
 def find_image(news_dir: str, stem: str) -> str | None:
@@ -186,12 +151,112 @@ def _verify_login(session: requests.Session, base_url: str) -> str:
     return extract_formhash(r.text)
 
 
+def _init_ocr():
+    """初始化 ddddocr，失败返回 None"""
+    try:
+        import ddddocr
+        return ddddocr.DdddOcr(show_ad=False)
+    except Exception:  # noqa: BLE001
+        logging.debug("ddddocr 初始化失败，将跳过 OCR 识别", exc_info=True)
+        return None
+
+
+def _preprocess_captcha(img_bytes: bytes) -> list:
+    """对验证码图片做多种预处理，返回多个候选图片 bytes"""
+    candidates = [img_bytes]
+    try:
+        import io as _io
+
+        from PIL import Image, ImageFilter
+        img = Image.open(_io.BytesIO(img_bytes))
+        gray = img.convert("L")
+        bw = gray.point(lambda x: 255 if x > 128 else 0, "1")
+        buf = _io.BytesIO()
+        bw.save(buf, format="PNG")
+        candidates.append(buf.getvalue())
+        big = img.convert("L").resize((img.width * 2, img.height * 2), Image.LANCZOS)
+        sharp = big.filter(ImageFilter.SHARPEN)
+        buf2 = _io.BytesIO()
+        sharp.save(buf2, format="PNG")
+        candidates.append(buf2.getvalue())
+    except Exception:  # noqa: BLE001
+        logging.debug("验证码图片预处理失败，使用原始图片", exc_info=True)
+    return candidates
+
+
+def _ocr_recognize(ocr, img_bytes: bytes) -> str:
+    """用 OCR 识别验证码，返回识别结果（失败返回空字符串）"""
+    if not ocr:
+        return ""
+    candidates = _preprocess_captcha(img_bytes)
+    for idx, img_data in enumerate(candidates):
+        try:
+            raw = re.sub(r'[^a-zA-Z0-9]', '', ocr.classification(img_data).strip())
+            if 3 <= len(raw) <= 8:
+                tag = "原始" if idx == 0 else f"预处理#{idx}"
+                print(f"    OCR ({tag}): {raw}")
+                return raw
+        except Exception:  # noqa: BLE001
+            logging.debug("OCR 识别单张图片失败", exc_info=True)
+    return ""
+
+
+def _submit_captcha_login(session, base_url, r_cap, idhash, auth_token,
+                          username, password, answer) -> bool:
+    """提交一次验证码登录，成功返回 True，失败返回 False"""
+    from urllib.parse import quote
+    fh_cap = extract_formhash(r_cap.text)
+    lh_cap = extract_loginhash(r_cap.text)
+    seccode_field = "seccodeverify"
+    if 'name="seccode"' in r_cap.text and 'name="seccodeverify"' not in r_cap.text:
+        seccode_field = "seccode"
+    all_modids = re.findall(r"updateseccode\('[^']+',[^,]+,\s*'([^']+)'\)", r_cap.text)
+    seccodemodid = all_modids[-1] if all_modids else "member::logging"
+
+    post_data = {
+        "formhash": fh_cap,
+        "referer": f"{base_url}/",
+        "auth": auth_token,
+        "username": username,
+        "password": password,
+        "questionid": "0",
+        "answer": "",
+        "seccodehash": idhash,
+        "seccodemodid": seccodemodid,
+        seccode_field: answer,
+    }
+    referer_url = (
+        f"{base_url}/member.php?mod=logging&action=login"
+        f"&auth={quote(auth_token, safe='')}&referer={base_url}/&cookietime=1"
+    )
+    print(f"    提交: {seccode_field}={answer}, password={'(set)' if password else '(EMPTY!)'}")
+    session.headers.update({"Referer": referer_url})
+    r_post = session.post(
+        f"{base_url}/member.php?mod=logging&action=login"
+        f"&loginsubmit=yes&loginhash={lh_cap}&inajax=1",
+        data=post_data,
+    )
+    session.headers.pop("Referer", None)
+
+    if "欢迎您回来" in r_post.text or "succeedhandle_" in r_post.text:
+        return True
+
+    err_match = re.search(r'id="messagetext"[^>]*>(.*?)</div>', r_post.text, re.S)
+    if err_match:
+        err_msg = re.sub(r'<[^>]+>', '', err_match.group(1)).strip()[:200]
+        if "安全问题" not in err_msg:
+            print(f"    ✗ 登录被拒: {err_msg}")
+    else:
+        print(f"    ✗ 未知登录结果（HTTP {r_post.status_code}，长度 {len(r_post.text)}）")
+    return False
+
+
 def _login_with_captcha(session, base_url, username, password, captcha_answer, r):
+    from urllib.parse import quote, unquote
     print("    ⚠ 需要验证码")
     auth_m = re.search(r"auth=([A-Za-z0-9%/+]+)", r.text)
     if not auth_m:
         raise RuntimeError("无法提取 auth token")
-    from urllib.parse import quote, unquote
     auth_token = unquote(auth_m.group(1))
 
     r_cap = session.get(
@@ -202,49 +267,16 @@ def _login_with_captcha(session, base_url, username, password, captcha_answer, r
     if not seccode_m:
         raise RuntimeError("无法提取验证码 hash")
     idhash = seccode_m.group(1)
-
-    # 预初始化 OCR（避免每次循环重新创建）
-    ocr = None
-    try:
-        import ddddocr
-        ocr = ddddocr.DdddOcr(show_ad=False)
-    except Exception:  # noqa: BLE001
-        logging.debug("ddddocr 初始化失败，将跳过 OCR 识别", exc_info=True)
-
-    def _preprocess_captcha(img_bytes: bytes) -> list:
-        """对验证码图片做多种预处理，返回多个候选图片 bytes"""
-        candidates = [img_bytes]
-        try:
-            import io as _io
-
-            from PIL import Image, ImageFilter
-            img = Image.open(_io.BytesIO(img_bytes))
-            # 转灰度 + 二值化
-            gray = img.convert("L")
-            bw = gray.point(lambda x: 255 if x > 128 else 0, "1")
-            buf = _io.BytesIO()
-            bw.save(buf, format="PNG")
-            candidates.append(buf.getvalue())
-            # 放大 2x + 锐化
-            big = img.convert("L").resize((img.width * 2, img.height * 2), Image.LANCZOS)
-            sharp = big.filter(ImageFilter.SHARPEN)
-            buf2 = _io.BytesIO()
-            sharp.save(buf2, format="PNG")
-            candidates.append(buf2.getvalue())
-        except Exception:  # noqa: BLE001
-            logging.debug("验证码图片预处理失败，使用原始图片", exc_info=True)
-        return candidates
+    ocr = _init_ocr()
 
     for attempt in range(1, 6):
-        # ── 获取验证码图片（去掉 action=update，直接请求图片）──
         referer_url = (
             f"{base_url}/member.php?mod=logging&action=login"
             f"&auth={auth_token}&referer={base_url}/&cookietime=1"
         )
         session.headers.update({"Referer": referer_url})
         update_seed = str(int(time.time() * 1000))[-6:]
-        img_url = f"{base_url}/misc.php?mod=seccode&update={update_seed}&idhash={idhash}"
-        r_img = session.get(img_url)
+        r_img = session.get(f"{base_url}/misc.php?mod=seccode&update={update_seed}&idhash={idhash}")
         session.headers.pop("Referer", None)
 
         if len(r_img.content) < 100:
@@ -255,29 +287,7 @@ def _login_with_captcha(session, base_url, username, password, captcha_answer, r
             f.write(r_img.content)
         print(f"    验证码已保存: captcha.png ({len(r_img.content)} bytes)")
 
-        # ── 多策略 OCR 识别 ──
-        answer = ""
-        if ocr:
-            candidates = _preprocess_captcha(r_img.content)
-            ocr_results = []
-            for idx, img_data in enumerate(candidates):
-                try:
-                    raw = re.sub(r'[^a-zA-Z0-9]', '', ocr.classification(img_data).strip())
-                    if 3 <= len(raw) <= 8:
-                        ocr_results.append(raw)
-                        tag = "原始" if idx == 0 else f"预处理#{idx}"
-                        print(f"    OCR ({tag}): {raw}")
-                except Exception:  # noqa: BLE001
-                    logging.debug("OCR 识别单张图片失败", exc_info=True)
-            # 去重后取第一个
-            seen = set()
-            for item in ocr_results:
-                if item not in seen:
-                    answer = item
-                    break
-                seen.add(item)
-
-        # OCR 失败或无结果 → 兜底
+        answer = _ocr_recognize(ocr, r_img.content)
         if not answer:
             if captcha_answer:
                 answer = captcha_answer
@@ -287,61 +297,17 @@ def _login_with_captcha(session, base_url, username, password, captcha_answer, r
                 time.sleep(1)
                 continue
 
-        # ── 提交登录 ──
-        fh_cap = extract_formhash(r_cap.text)
-        lh_cap = extract_loginhash(r_cap.text)
-        # 动态检测 seccode 字段名
-        seccode_field = "seccodeverify"
-        if 'name="seccode"' in r_cap.text and 'name="seccodeverify"' not in r_cap.text:
-            seccode_field = "seccode"
-        # 提取 seccodemodid
-        all_modids = re.findall(r"updateseccode\('[^']+',[^,]+,\s*'([^']+)'\)", r_cap.text)
-        seccodemodid = all_modids[-1] if all_modids else "member::logging"
-
-        # 提交登录（与浏览器抓包一致：带 auth，同时保留 username/password）
-        post_data = {
-            "formhash": fh_cap,
-            "referer": f"{base_url}/",
-            "auth": auth_token,
-            "username": username,
-            "password": password,
-            "questionid": "0",
-            "answer": "",
-            "seccodehash": idhash,
-            "seccodemodid": seccodemodid,
-            seccode_field: answer,
-        }
-        print(f"    提交: {seccode_field}={answer}, password={'(set)' if password else '(EMPTY!)'}")
-        session.headers.update({"Referer": referer_url})
-
-        r_post = session.post(
-            f"{base_url}/member.php?mod=logging&action=login&loginsubmit=yes&loginhash={lh_cap}&inajax=1",
-            data=post_data,
-        )
-        session.headers.pop("Referer", None)
-
-        # ── 判断是否成功（多种方式）──
-        if "欢迎您回来" in r_post.text or "succeedhandle_" in r_post.text:
+        if _submit_captcha_login(session, base_url, r_cap, idhash, auth_token,
+                                 username, password, answer):
             print(f"    ✓ 验证码登录成功！（第{attempt}次）")
             return _verify_login(session, base_url)
 
-        # 检查是否有明确的错误信息
-        err_match = re.search(r'id="messagetext"[^>]*>(.*?)</div>', r_post.text, re.S)
-        if err_match:
-            err_msg = re.sub(r'<[^>]+>', '', err_match.group(1)).strip()[:200]
-            if "安全问题" not in err_msg:  # "安全问题回答错误" 说明验证码过了
-                print(f"    ✗ 登录被拒: {err_msg}")
-        else:
-            print(f"    ✗ 未知登录结果（HTTP {r_post.status_code}，长度 {len(r_post.text)}, {r_post.text}）")
-
-        # ── 刷新页面：获取新 auth_token + seccodehash ──
         if attempt < 5:
             print(f"    重新获取登录页（第{attempt+1}次尝试）...")
             r_cap = session.get(
                 f"{base_url}/member.php?mod=logging&action=login"
                 f"&auth={auth_token}&referer={base_url}/&cookietime=1"
             )
-            # 刷新 auth token（防过期）
             auth_m_new = re.search(r"auth=([A-Za-z0-9%/+]+)", r_cap.text)
             if auth_m_new:
                 auth_token = unquote(auth_m_new.group(1))
@@ -427,11 +393,48 @@ class MCBBSPoster:
         err_msg = re.sub(r"<[^>]+>", "", err.group(1)).strip()[:200] if err else "未知错误"
         raise RuntimeError(f"登录失败: {err_msg}")
 
+    def _upload(self, file_path: str, upload_filename: str, mime_type: str,
+                extra_data: dict = None) -> str:
+        """内部上传方法，封装重试逻辑。extra_data 用于图片上传的 type:image 参数。"""
+        upload_url = (
+            f"{self.base_url}/misc.php?mod=swfupload&action=swfupload"
+            f"&operation=upload&fid={self.forum_fid}"
+        )
+        referer = f"{self.base_url}/forum.php?mod=post&action=newthread&fid={self.forum_fid}"
+        aid = ""
+        for attempt in range(1, 4):
+            r = self.session.get(referer)
+            r.raise_for_status()
+            hash_m = re.search(r'"hash"\s*:\s*"([a-f0-9]+)"', r.text)
+            uid_m = re.search(r'"uid"\s*:\s*"(\d+)"', r.text)
+            if not hash_m or not uid_m:
+                raise RuntimeError("无法提取上传参数")
+
+            self.session.headers.update({"Referer": referer})
+            data = {"uid": uid_m.group(1), "hash": hash_m.group(1)}
+            if extra_data:
+                data.update(extra_data)
+            with open(file_path, "rb") as f:
+                r_up = self.session.post(
+                    upload_url,
+                    files={"Filedata": (upload_filename, f, mime_type)},
+                    data=data,
+                    timeout=30,
+                )
+            self.session.headers.pop("Referer", None)
+
+            aid = r_up.text.strip()
+            if aid.isdigit():
+                return aid
+
+            if attempt < 3:
+                print(f"    ⚠ 第{attempt}次上传失败，2秒后重试...")
+                time.sleep(2)
+
+        raise RuntimeError(f"上传失败: {aid[:200]}")
+
     def upload_file(self, file_path: str, mime_type: str = None) -> str:
-        """
-        上传普通文件（非图片附件），返回附件 ID。
-        用于上传 JSON 等数据文件供下载。
-        """
+        """上传普通文件（非图片附件），返回附件 ID。"""
         if not self.session:
             raise RuntimeError("未登录，请先调用 login()")
 
@@ -461,41 +464,9 @@ class MCBBSPoster:
             mime_type = "text/plain"
             print(f"    (扩展名 {ext} 不被允许，上传时改用 {upload_filename})")
 
-        upload_url = (
-            f"{self.base_url}/misc.php?mod=swfupload&action=swfupload"
-            f"&operation=upload&fid={self.forum_fid}"
-        )
-
-        for attempt in range(1, 4):
-            r = self.session.get(
-                f"{self.base_url}/forum.php?mod=post&action=newthread&fid={self.forum_fid}"
-            )
-            r.raise_for_status()
-            hash_m = re.search(r'"hash"\s*:\s*"([a-f0-9]+)"', r.text)
-            uid_m = re.search(r'"uid"\s*:\s*"(\d+)"', r.text)
-            if not hash_m or not uid_m:
-                raise RuntimeError("无法提取上传参数")
-
-            self.session.headers.update({
-                "Referer": f"{self.base_url}/forum.php?mod=post&action=newthread&fid={self.forum_fid}"
-            })
-            with open(file_path, "rb") as f:
-                files = {"Filedata": (upload_filename, f, mime_type)}
-                # 不传 type: "image"，Discuz 会当作普通附件处理
-                data = {"uid": uid_m.group(1), "hash": hash_m.group(1)}
-                r_up = self.session.post(upload_url, files=files, data=data, timeout=30)
-            self.session.headers.pop("Referer", None)
-
-            aid = r_up.text.strip()
-            if aid.isdigit():
-                print(f"    ✓ 文件上传成功！aid={aid}")
-                return aid
-
-            if attempt < 3:
-                print(f"    ⚠ 第{attempt}次上传失败，2秒后重试...")
-                time.sleep(2)
-
-        raise RuntimeError(f"文件上传失败: {aid[:200]}")
+        aid = self._upload(file_path, upload_filename, mime_type)
+        print(f"    ✓ 文件上传成功！aid={aid}")
+        return aid
 
     def upload_image(self, image_path: str) -> str:
         """上传图片，返回附件 ID"""
@@ -510,41 +481,9 @@ class MCBBSPoster:
         }
         mime = mime_map.get(ext, "image/jpeg")
         filename = os.path.basename(image_path)
-
-        upload_url = (
-            f"{self.base_url}/misc.php?mod=swfupload&action=swfupload"
-            f"&operation=upload&fid={self.forum_fid}"
-        )
-
-        for attempt in range(1, 4):
-            r = self.session.get(
-                f"{self.base_url}/forum.php?mod=post&action=newthread&fid={self.forum_fid}"
-            )
-            r.raise_for_status()
-            hash_m = re.search(r'"hash"\s*:\s*"([a-f0-9]+)"', r.text)
-            uid_m = re.search(r'"uid"\s*:\s*"(\d+)"', r.text)
-            if not hash_m or not uid_m:
-                raise RuntimeError("无法提取上传参数")
-
-            self.session.headers.update({
-                "Referer": f"{self.base_url}/forum.php?mod=post&action=newthread&fid={self.forum_fid}"
-            })
-            with open(image_path, "rb") as f:
-                files = {"Filedata": (filename, f, mime)}
-                data = {"uid": uid_m.group(1), "hash": hash_m.group(1), "type": "image"}
-                r_up = self.session.post(upload_url, files=files, data=data, timeout=30)
-            self.session.headers.pop("Referer", None)
-
-            aid = r_up.text.strip()
-            if aid.isdigit():
-                print(f"    ✓ 上传成功！aid={aid}")
-                return aid
-
-            if attempt < 3:
-                print(f"    ⚠ 第{attempt}次上传失败，2秒后重试...")
-                time.sleep(2)
-
-        raise RuntimeError(f"图片上传失败: {aid[:200]}")
+        aid = self._upload(image_path, filename, mime, extra_data={"type": "image"})
+        print(f"    ✓ 上传成功！aid={aid}")
+        return aid
 
     def post_thread(self, title: str, message: str,
                     attachment_ids: list = None, sortid: int = None) -> str:
