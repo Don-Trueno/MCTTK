@@ -8,9 +8,7 @@ output/*.gif
 output/*.webp
 
 old/
-
-# 注意：.state.json 和 .posted.json 是 dotfile，不被上面的 * 通配符匹配
-# 因此它们默认会被 git 跟踪，无需额外处理
+# 注意：.state.json 和 .posted.json 会被 git 跟踪
 
 # 验证码临时文件
 captcha.png
@@ -24,7 +22,7 @@ __pycache__/
 dist/
 build/
 
-# 调试文件
+# 根目录下的调试文件不提交
 debug*.*
 test*.*
 glossary_*.json
@@ -39,3 +37,6 @@ glossary_*.json
 .env
 venv/
 .venv/
+
+# 测试文件夹下的调试文件需要提交
+!tests/test_*.*

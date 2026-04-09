@@ -849,7 +849,7 @@ def parse_article_page(article_url, config=None):
         title = title_tag.get_text(strip=True) if title_tag else ""
 
         date_tag = soup.find("meta", {"property": "article:published_time"})
-        release_date = date_tag["content"] if date_tag else ""
+        release_date = date_tag.get("content", "") if date_tag else ""
 
         # 提取头图
         header_image_url = ""

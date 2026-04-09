@@ -23,7 +23,11 @@ ignore = [
     "S501",   # verify=False 是有意为之
 ]
 
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
 [dependency-groups]
 dev = [
     "ruff>=0.15.9",
+    "pytest>=8.0",
 ]
