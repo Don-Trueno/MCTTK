@@ -8,13 +8,14 @@
 也可作为模块导入:
   from converter import J2MMConverter
 """
-import json
-import re
 import argparse
-from pathlib import Path
-from typing import Dict, List, Optional
+import json
+import logging
+import re
 from datetime import datetime
+from pathlib import Path
 
+from utils import MODULE_TYPE_MAP
 
 # ── 工具函数 ─────────────────────────────────────────
 
@@ -25,29 +26,30 @@ def _md_links_to_bbcode(text: str) -> str:
 def _parse_date(date_str: str) -> str:
     if not date_str:
         return date_str
-    from datetime import timezone, timedelta
+    from datetime import timedelta, timezone
     TZ_CN = timezone(timedelta(hours=8))
     try:
         dt = datetime.fromisoformat(date_str.replace('Z', '+00:00'))
         dt = dt.astimezone(TZ_CN)
         return f"{dt.year}/{dt.month}/{dt.day} {dt.hour:02d}:{dt.minute:02d}:{dt.second:02d}"
-    except Exception:
-        pass
+    except Exception:  # noqa: BLE001
+        logging.debug("_parse_date: fromisoformat 失败，尝试下一格式", exc_info=True)
     try:
         dt = datetime.strptime(date_str.strip(), "%d %B %Y")
         return f"{dt.year}/{dt.month}/{dt.day} 00:00:00"
-    except Exception:
-        pass
+    except Exception:  # noqa: BLE001
+        logging.debug("_parse_date: strptime %%d %%B %%Y 失败，尝试下一格式", exc_info=True)
     try:
         dt = datetime.strptime(date_str.strip(), "%B %d, %Y")
         return f"{dt.year}/{dt.month}/{dt.day} 00:00:00"
-    except Exception:
-        pass
+    except Exception:  # noqa: BLE001
+        logging.debug("_parse_date: 所有格式均失败，原样返回 %r", date_str, exc_info=True)
     return date_str
 
 
 def _bbcode_to_markdown(bbcode: str) -> str:
     text = bbcode
+    # 最多处理 5 层嵌套 BBCode；超过 5 层的嵌套会��默保留原始标签
     for _ in range(5):
         text = re.sub(r'\[b\](.*?)\[/b\]', r'**\1**', text, flags=re.DOTALL)
         text = re.sub(r'\[i\](.*?)\[/i\]', r'*\1*', text, flags=re.DOTALL)
@@ -73,7 +75,7 @@ def _bbcode_to_markdown(bbcode: str) -> str:
 # ── BBCode 渲染器 ───────────────────────────────────
 
 class BBCodeRenderer:
-    def render(self, blocks: List[Dict]) -> str:
+    def render(self, blocks: list[dict]) -> str:
         out = []
         i = 0
         while i < len(blocks):
@@ -189,7 +191,7 @@ class BBCodeRenderer:
 # ── Markdown 渲染器 ─────────────────────────────────
 
 class MarkdownRenderer:
-    def render(self, blocks: List[Dict]) -> str:
+    def render(self, blocks: list[dict]) -> str:
         out = []
         i = 0
         while i < len(blocks):
@@ -288,58 +290,19 @@ class MarkdownRenderer:
 # ── 文章类型检测 ─────────────────────────────────────
 
 def _detect_article_type(title: str) -> str:
-    t = title or ''
-    t_lower = t.lower()
-    # Java 版本（优先级高）
-    if 'snapshot' in t_lower:
-        return 'java_snapshot'
-    if 'pre-release' in t_lower or 'pre release' in t_lower or 'prerelease' in t_lower:
-        return 'java_prerelease'
-    if 'release candidate' in t_lower:
-        return 'java_rc'
-    # 基岩版本
-    if 'beta' in t_lower or 'preview' in t_lower or '预览' in t:
-        return 'bedrock_beta'
-    if 'bedrock' in t_lower or '基岩' in t:
-        return 'bedrock_release'
-    # 时评
-    if '时评' in t or 'commentary' in t_lower:
-        return 'commentary'
-    # Java 正式版
-    if 'java edition' in t_lower or 'java版' in t or re.search(r'\b1\.\d+(\.\d+)?\b', t):
-        return 'java_release'
-    return 'normal'
-
-
-_MODULE_TYPE_MAP = {
-    'module_java_snapshot_header': 'java_snapshot',
-    'module_java_snapshot_footer': 'java_snapshot',
-    'module_java_prerelease_header': 'java_prerelease',
-    'module_java_prerelease_footer': 'java_prerelease',
-    'module_java_rc_header': 'java_rc',
-    'module_java_rc_footer': 'java_rc',
-    'module_java_release_header': 'java_release',
-    'module_java_release_footer': 'java_release',
-    'module_bedrock_beta_header': 'bedrock_beta',
-    'module_bedrock_beta_footer': 'bedrock_beta',
-    'module_bedrock_release_header': 'bedrock_release',
-    'module_bedrock_release_footer': 'bedrock_release',
-    'module_commentary_header': 'commentary',
-    'module_commentary_footer': 'commentary',
-    'module_normal_header': 'normal',
-    'module_normal_footer': 'normal',
-}
+    from utils import classify_article_type
+    return classify_article_type(title, commentary=True, fallback='normal')
 
 
 # ── 主转换器 ─────────────────────────────────────────
 
 class J2MMConverter:
-    def __init__(self, modules_config: Optional[Dict] = None):
+    def __init__(self, modules_config: dict | None = None):
         self.modules_config = modules_config or {'default_modules': [], 'custom_modules': []}
         self._bb = BBCodeRenderer()
         self._md = MarkdownRenderer()
 
-    def convert_to_bbcode(self, json_data: Dict) -> str:
+    def convert_to_bbcode(self, json_data: dict) -> str:
         blocks = json_data.get('blocks', [])
         parts = []
         article_type = _detect_article_type(json_data.get('title', ''))
@@ -382,14 +345,15 @@ class J2MMConverter:
 
         return '\n\n'.join(p for p in parts if p)
 
-    def convert_to_markdown(self, json_data: Dict) -> str:
+    def convert_to_markdown(self, json_data: dict) -> str:
         blocks = json_data.get('blocks', [])
         parts = []
         article_type = _detect_article_type(json_data.get('title', ''))
 
         for m in self._get_modules('start', article_type):
             md_content = m.get('markdown_content')
-            parts.append(md_content if md_content is not None else _bbcode_to_markdown(m.get('bbcode_content') or m['content']))
+            fallback = _bbcode_to_markdown(m.get('bbcode_content') or m['content'])
+            parts.append(md_content if md_content is not None else fallback)
 
         parts.append('---')
         parts.append('**NEWS**')
@@ -420,14 +384,16 @@ class J2MMConverter:
 
         for m in self._get_modules('custom', article_type):
             md_content = m.get('markdown_content')
-            parts.append(md_content if md_content is not None else _bbcode_to_markdown(m.get('bbcode_content') or m['content']))
+            fallback = _bbcode_to_markdown(m.get('bbcode_content') or m['content'])
+            parts.append(md_content if md_content is not None else fallback)
         for m in self._get_modules('end', article_type):
             md_content = m.get('markdown_content')
-            parts.append(md_content if md_content is not None else _bbcode_to_markdown(m.get('bbcode_content') or m['content']))
+            fallback = _bbcode_to_markdown(m.get('bbcode_content') or m['content'])
+            parts.append(md_content if md_content is not None else fallback)
 
         return '\n\n'.join(p for p in parts if p)
 
-    def _get_modules(self, position: str, article_type: str = 'normal') -> List[Dict]:
+    def _get_modules(self, position: str, article_type: str = 'normal') -> list[dict]:
         cfg = self.modules_config
         if position == 'custom':
             return [m for m in cfg.get('custom_modules', []) if m.get('enabled')]
@@ -435,9 +401,7 @@ class J2MMConverter:
         for m in cfg.get('default_modules', []):
             if m.get('position') != position:
                 continue
-            if m.get('enabled'):
-                modules.append(m)
-            elif _MODULE_TYPE_MAP.get(m.get('id', '')) == article_type:
+            if m.get('enabled') or MODULE_TYPE_MAP.get(m.get('id', '')) == article_type:
                 modules.append(m)
         return sorted(modules, key=lambda m: m.get('order', 9999))
 
@@ -447,11 +411,11 @@ class J2MMConverter:
 def convert_json_file(json_path: str, output_prefix: str = None, modules_config: dict = None) -> tuple:
     """
     将单个 JSON 文件转换为 BBCode (.txt) 和 Markdown (.md)
-    
+
     Returns:
         (bbcode_path, markdown_path) 元组
     """
-    with open(json_path, 'r', encoding='utf-8') as f:
+    with open(json_path, encoding='utf-8') as f:
         data = json.load(f)
 
     conv = J2MMConverter(modules_config)
@@ -475,13 +439,13 @@ def convert_json_file(json_path: str, output_prefix: str = None, modules_config:
 # ── CLI 入口 ─────────────────────────────────────────
 
 def _load_json(path):
-    with open(path, 'r', encoding='utf-8') as f:
+    with open(path, encoding='utf-8') as f:
         return json.load(f)
 
 
 def _load_modules(path):
     if path and Path(path).exists():
-        with open(path, 'r', encoding='utf-8') as f:
+        with open(path, encoding='utf-8') as f:
             return json.load(f)
     return None
 

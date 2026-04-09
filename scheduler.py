@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Docker 定时调度器 - 每 10 分钟运行一次 main.py"""
 
-import time
-import subprocess
 import gc
+import subprocess
 import sys
+import time
 
 INTERVAL = 600  # 10 分钟
 
@@ -19,11 +18,17 @@ def run_main():
         result = subprocess.run(
             [sys.executable, "main.py"],
             capture_output=False,
-            text=True
+            text=True,
+            timeout=600,
         )
 
-        print(f"\n[调度器] 执行完成 (退出码: {result.returncode})")
+        if result.returncode != 0:
+            print(f"[调度器] ⚠ main.py 退出码异常: {result.returncode}")
+        else:
+            print(f"\n[调度器] 执行完成 (退出码: {result.returncode})")
 
+    except subprocess.TimeoutExpired:
+        print("[调度器] ⚠ main.py 执行超时（600s），已强制终止")
     except Exception as e:
         print(f"[调度器] 执行失败: {e}")
     finally:

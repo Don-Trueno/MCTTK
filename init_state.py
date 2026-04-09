@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 init_state.py — 初始化 output/.state.json 和 output/.posted.json
 用途：测试前将除一条外的所有新闻标记为"已处理"，避免全量翻译
@@ -8,25 +7,19 @@ init_state.py — 初始化 output/.state.json 和 output/.posted.json
   python init_state.py
 """
 
+import json
 import os
 import sys
-import json
 import time
-
-# 自动加载 .env
-_env_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
-if os.path.exists(_env_path):
-    with open(_env_path, encoding="utf-8") as _f:
-        for _line in _f:
-            _line = _line.strip()
-            if _line and not _line.startswith("#") and "=" in _line:
-                _k, _v = _line.split("=", 1)
-                os.environ.setdefault(_k.strip(), _v.strip())
 
 PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, PROJECT_DIR)
 
-from scraper import load_config, get_latest_news_list, FeedbackScraper, classify_news_type
+from utils import load_dotenv  # noqa: E402
+
+load_dotenv(PROJECT_DIR)
+
+from scraper import FeedbackScraper, classify_news_type, get_latest_news_list, load_config  # noqa: E402
 
 CONFIG_PATH = os.path.join(PROJECT_DIR, "config.json")
 config = load_config(CONFIG_PATH)
@@ -83,7 +76,7 @@ else:
     try:
         keep_idx = int(choice) - 1
         if not (0 <= keep_idx < len(all_news)):
-            print(f"编号超出范围，默认保留第 1 条")
+            print("编号超出范围，默认保留第 1 条")
             keep_idx = 0
     except ValueError:
         print("输入无效，默认保留第 1 条")
