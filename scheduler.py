@@ -18,11 +18,17 @@ def run_main():
         result = subprocess.run(
             [sys.executable, "main.py"],
             capture_output=False,
-            text=True
+            text=True,
+            timeout=600,
         )
 
-        print(f"\n[调度器] 执行完成 (退出码: {result.returncode})")
+        if result.returncode != 0:
+            print(f"[调度器] ⚠ main.py 退出码异常: {result.returncode}")
+        else:
+            print(f"\n[调度器] 执行完成 (退出码: {result.returncode})")
 
+    except subprocess.TimeoutExpired:
+        print("[调度器] ⚠ main.py 执行超时（600s），已强制终止")
     except Exception as e:
         print(f"[调度器] 执行失败: {e}")
     finally:

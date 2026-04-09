@@ -25,19 +25,15 @@ import logging
 import os
 import sys
 import time
+import traceback
 
 # 项目根目录
 PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
 
 # 自动加载 .env 文件（本地开发用，不影响 GitHub Actions）
-_env_path = os.path.join(PROJECT_DIR, ".env")
-if os.path.exists(_env_path):
-    with open(_env_path, encoding="utf-8") as _f:
-        for _line in _f:
-            _line = _line.strip()
-            if _line and not _line.startswith("#") and "=" in _line:
-                _k, _v = _line.split("=", 1)
-                os.environ.setdefault(_k.strip(), _v.strip())
+from utils import load_dotenv  # noqa: E402
+
+load_dotenv(PROJECT_DIR)
 
 
 def load_main_config() -> dict:
@@ -47,14 +43,9 @@ def load_main_config() -> dict:
     return load_config(config_path)
 
 
-def classify_news_type(title: str) -> str:
-    """根据标题判断新闻类型"""
-    from scraper import classify_news_type
-    return classify_news_type(title)
-
-
 def filter_news_by_types(news_list: list, config: dict) -> list:
     """按配置的 news_types 过滤新闻"""
+    from scraper import classify_news_type
     news_types = config.get("news_types", {})
     # 如果没有配置 news_types 或全部为 true，不过滤
     if not news_types or all(news_types.values()):
@@ -103,7 +94,14 @@ def run_scrape(config: dict, state_file: str, dry_run: bool = False) -> list:
         已处理的文章 (stem, txt_path, json_path) 列表
     """
     from converter import convert_json_file
-    from scraper import FeedbackScraper, get_latest_news_list, process_article, process_feedback_news, save_article_json
+    from scraper import (
+        FeedbackScraper,
+        classify_news_type,
+        get_latest_news_list,
+        process_article,
+        process_feedback_news,
+        save_article_json,
+    )
 
     save_dir = config["output"]["save_dir"]
     os.makedirs(save_dir, exist_ok=True)
@@ -112,7 +110,7 @@ def run_scrape(config: dict, state_file: str, dry_run: bool = False) -> list:
 
     # ── 1. Minecraft 官方 API 新闻 ──
     page_size = config.get("minecraft_api", {}).get("pageSize", 10)
-    api_news = get_latest_news_list(page_size=page_size)
+    api_news = get_latest_news_list(page_size=page_size, config=config)
     for news in api_news:
         news['_source'] = 'minecraft_api'
     all_news.extend(api_news)
@@ -192,13 +190,16 @@ def run_scrape(config: dict, state_file: str, dry_run: bool = False) -> list:
 
         try:
             # 根据来源选择处理方式
-            full_data = process_feedback_news(news, config) if source == 'feedback' else process_article(news)
+            if source == 'feedback':
+                full_data = process_feedback_news(news, config)
+            else:
+                full_data = process_article(news, config=config)
             if not full_data:
                 print("[主] 文章处理失败，跳过")
                 continue
 
             # 保存 JSON
-            json_path = save_article_json(full_data, save_dir=save_dir)
+            json_path = save_article_json(full_data, save_dir=save_dir, config=config)
             if not json_path:
                 print("[主] JSON 保存失败，跳过")
                 continue
@@ -230,7 +231,6 @@ def run_scrape(config: dict, state_file: str, dry_run: bool = False) -> list:
 
         except Exception as e:
             print(f"[主] 处理异常: {e}")
-            import traceback
             traceback.print_exc()
 
     return processed
