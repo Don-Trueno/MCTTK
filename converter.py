@@ -10,6 +10,7 @@
 """
 import argparse
 import json
+import logging
 import re
 from datetime import datetime
 from pathlib import Path
@@ -29,18 +30,18 @@ def _parse_date(date_str: str) -> str:
         dt = datetime.fromisoformat(date_str.replace('Z', '+00:00'))
         dt = dt.astimezone(TZ_CN)
         return f"{dt.year}/{dt.month}/{dt.day} {dt.hour:02d}:{dt.minute:02d}:{dt.second:02d}"
-    except Exception:  # noqa: BLE001, S110
-        pass
+    except Exception:  # noqa: BLE001
+        logging.debug("_parse_date: fromisoformat 失败，尝试下一格式", exc_info=True)
     try:
         dt = datetime.strptime(date_str.strip(), "%d %B %Y")
         return f"{dt.year}/{dt.month}/{dt.day} 00:00:00"
-    except Exception:  # noqa: BLE001, S110
-        pass
+    except Exception:  # noqa: BLE001
+        logging.debug("_parse_date: strptime %%d %%B %%Y 失败，尝试下一格式", exc_info=True)
     try:
         dt = datetime.strptime(date_str.strip(), "%B %d, %Y")
         return f"{dt.year}/{dt.month}/{dt.day} 00:00:00"
-    except Exception:  # noqa: BLE001, S110
-        pass
+    except Exception:  # noqa: BLE001
+        logging.debug("_parse_date: 所有格式均失败，原样返回 %r", date_str, exc_info=True)
     return date_str
 
 

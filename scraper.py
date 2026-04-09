@@ -14,6 +14,7 @@ scraper.py — Minecraft 新闻爬取与翻译模块
 import contextlib
 import hashlib
 import json
+import logging
 import os
 import re
 import time
@@ -1229,8 +1230,8 @@ def save_article_json(data: dict, save_dir: str = None) -> str:
                 ext = url_path.rsplit(".", 1)[-1].lower()
                 if ext in ["jpg", "jpeg", "png", "gif", "webp"]:
                     image_ext = f".{ext}"
-        except Exception:  # noqa: BLE001, S110
-            pass
+        except Exception:  # noqa: BLE001
+            logging.debug("图片扩展名解析失败，使用默认 .jpg", exc_info=True)
         base_path = file_path.rsplit(".", 1)[0]
         image_path = base_path + image_ext
         download_header_image(header_image_url, image_path)

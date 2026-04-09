@@ -16,6 +16,7 @@ import argparse
 import contextlib
 import glob
 import json
+import logging
 import os
 import re
 import sys
@@ -207,8 +208,8 @@ def _login_with_captcha(session, base_url, username, password, captcha_answer, r
     try:
         import ddddocr
         ocr = ddddocr.DdddOcr(show_ad=False)
-    except Exception:  # noqa: BLE001, S110
-        pass
+    except Exception:  # noqa: BLE001
+        logging.debug("ddddocr 初始化失败，将跳过 OCR 识别", exc_info=True)
 
     def _preprocess_captcha(img_bytes: bytes) -> list:
         """对验证码图片做多种预处理，返回多个候选图片 bytes"""
@@ -230,8 +231,8 @@ def _login_with_captcha(session, base_url, username, password, captcha_answer, r
             buf2 = _io.BytesIO()
             sharp.save(buf2, format="PNG")
             candidates.append(buf2.getvalue())
-        except Exception:  # noqa: BLE001, S110
-            pass
+        except Exception:  # noqa: BLE001
+            logging.debug("验证码图片预处理失败，使用原始图片", exc_info=True)
         return candidates
 
     for attempt in range(1, 6):
@@ -266,8 +267,8 @@ def _login_with_captcha(session, base_url, username, password, captcha_answer, r
                         ocr_results.append(raw)
                         tag = "原始" if idx == 0 else f"预处理#{idx}"
                         print(f"    OCR ({tag}): {raw}")
-                except Exception:  # noqa: BLE001, S110
-                    pass
+                except Exception:  # noqa: BLE001
+                    logging.debug("OCR 识别单张图片失败", exc_info=True)
             # 去重后取第一个
             seen = set()
             for item in ocr_results:

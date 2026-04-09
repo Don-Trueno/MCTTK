@@ -21,6 +21,7 @@ main.py — MCTTK 新闻自动爬取 + 翻译 + 转换 + 发布 编排器
 
 import argparse
 import json
+import logging
 import os
 import sys
 import time
@@ -80,8 +81,8 @@ def load_state(state_file: str) -> dict:
         try:
             with open(state_file, encoding="utf-8") as f:
                 return json.load(f)
-        except Exception:  # noqa: BLE001, S110
-            pass
+        except Exception:  # noqa: BLE001
+            logging.warning("状态文件 %s 读取失败，将重置为初始状态", state_file, exc_info=True)
     return {"posted_urls": [], "last_run": None, "_first_run": True}
 
 
