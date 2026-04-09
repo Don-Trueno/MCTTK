@@ -1,6 +1,7 @@
 """test_config_json.py — config.json 结构与内容验证"""
 import json
 from pathlib import Path
+
 import pytest
 
 CONFIG_PATH = Path(__file__).parent.parent / "config.json"

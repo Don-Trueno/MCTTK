@@ -4,6 +4,7 @@
 只测试可独立运行的纯函数。
 """
 import pytest
+
 from scraper import (
     _chunk_items_for_translation,
     _deep_merge,
@@ -17,7 +18,6 @@ from scraper import (
     load_glossary,
     reindex_blocks,
 )
-
 
 # ── _deep_merge ──────────────────────────────────────
 
@@ -244,7 +244,8 @@ class TestBlocksToPlaintext:
         assert "Hello" not in result
 
     def test_img_block(self):
-        blocks = [{"type": "img", "source_text": "", "translated_text": "", "meta": {"src": "http://img.com/a.png", "alt": "图片"}}]
+        blocks = [{"type": "img", "source_text": "", "translated_text": "",
+                   "meta": {"src": "http://img.com/a.png", "alt": "图片"}}]
         result = blocks_to_plaintext(blocks, field="source_text")
         assert "http://img.com/a.png" in result
         assert "图片" in result

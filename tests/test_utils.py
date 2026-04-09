@@ -1,6 +1,6 @@
 """test_utils.py — utils.py 单元测试"""
 import os
-import pytest
+
 from utils import load_dotenv
 
 

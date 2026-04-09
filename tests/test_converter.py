@@ -3,6 +3,7 @@
 测试原则：只测纯逻辑函数，不依赖文件系统或网络。
 """
 import pytest
+
 from converter import (
     BBCodeRenderer,
     J2MMConverter,
@@ -12,7 +13,6 @@ from converter import (
     _md_links_to_bbcode,
     _parse_date,
 )
-
 
 # ── _md_links_to_bbcode ──────────────────────────────
 

@@ -1,6 +1,7 @@
 """test_glossary_json.py — glossary.json 结构与内容验证"""
 import json
 from pathlib import Path
+
 import pytest
 
 GLOSSARY_PATH = Path(__file__).parent.parent / "glossary.json"
