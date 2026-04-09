@@ -1,0 +1,43 @@
+[project]
+name = "mcttk"
+version = "0.1.0"
+requires-python = ">=3.13"
+dependencies = [
+    "requests>=2.31",
+    "beautifulsoup4>=4.12",
+    "urllib3>=2.0",
+]
+
+[project.optional-dependencies]
+captcha = ["ddddocr>=1.4", "Pillow>=10.0"]
+feedback = ["curl_cffi>=0.7"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py313"
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle errors
+    "W",    # pycodestyle warnings
+    "F",    # pyflakes
+    "B",    # flake8-bugbear (catches broad except, mutable defaults 等)
+    "I",    # isort
+    "UP",   # pyupgrade
+    "S",    # flake8-bandit (安全检查)
+    "SIM",  # flake8-simplify
+]
+ignore = [
+    "S101",   # assert 用在测试没问题
+    "S501",   # verify=False 是有意为之
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+
+[dependency-groups]
+dev = [
+    "ruff>=0.15.9",
+    "pytest>=8.0",
+]

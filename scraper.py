@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 scraper.py — Minecraft 新闻爬取与翻译模块
 
@@ -12,18 +11,20 @@ scraper.py — Minecraft 新闻爬取与翻译模块
 配置：统一由 config.json 加载
 """
 
-import requests
+import contextlib
+import hashlib
 import json
 import os
 import re
-import urllib3
-import hashlib
+import sys
 import time
-from datetime import datetime
-from pathlib import Path
-from urllib.parse import urljoin
-from bs4 import BeautifulSoup, NavigableString, Tag
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import datetime
+from urllib.parse import urljoin
+
+import requests
+import urllib3
+from bs4 import BeautifulSoup, NavigableString, Tag
 
 # 尝试导入 curl_cffi（用于 Feedback 网站爬取，绕过 Cloudflare）
 try:
@@ -78,7 +79,10 @@ DEFAULT_CONFIG = {
     },
     "http": {
         "verify_ssl": False,
-        "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36",
+        "user_agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36"
+        ),
         "accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
         "proxies": { "http": "", "https": "" },
         "timeout": 120
@@ -117,10 +121,10 @@ def load_config(config_path: str = None) -> dict:
     config = dict(DEFAULT_CONFIG)
     if os.path.exists(config_path):
         try:
-            with open(config_path, "r", encoding="utf-8") as f:
+            with open(config_path, encoding="utf-8") as f:
                 user_config = json.load(f)
             config = _deep_merge(config, user_config)
-        except (json.JSONDecodeError, IOError) as e:
+        except (OSError, json.JSONDecodeError) as e:
             print(f"[配置] 加载失败，使用默认配置: {e}")
     else:
         print(f"[配置] 配置文件不存在: {config_path}")
@@ -135,21 +139,26 @@ def load_config(config_path: str = None) -> dict:
     return config
 
 
-# ── 全局配置 ─────────────────────────────────────────
+# ── 懒加载全局配置 ────────────────────────────────────
 
-CFG = load_config()
+_CFG = None
+_GLOSSARY = None
 
-PROXIES = CFG["http"].get("proxies")
-if PROXIES and not any(PROXIES.values()):
-    PROXIES = None
 
-HEADERS_HTML = {
-    "User-Agent": CFG["http"]["user_agent"],
-    "Accept": CFG["http"]["accept"]
-}
+def _get_cfg() -> dict:
+    global _CFG
+    if _CFG is None:
+        _CFG = load_config()
+    return _CFG
+
+
+def _get_glossary() -> dict:
+    global _GLOSSARY
+    if _GLOSSARY is None:
+        _GLOSSARY = load_glossary()
+    return _GLOSSARY
 
 # ── 词汇表加载 ─────────────────────────────────────────
-
 def load_glossary(glossary_path: str = None) -> dict:
     """加载专业术语词汇表"""
     if glossary_path is None:
@@ -159,34 +168,42 @@ def load_glossary(glossary_path: str = None) -> dict:
         return {}
 
     try:
-        with open(glossary_path, "r", encoding="utf-8") as f:
+        with open(glossary_path, encoding="utf-8") as f:
             data = json.load(f)
         return {
             "terms": data.get("terms", {}),
             "placeholders": data.get("placeholders", {})
         }
-    except (json.JSONDecodeError, IOError) as e:
+    except (OSError, json.JSONDecodeError) as e:
         print(f"[词汇表] 加载失败: {e}")
         return {}
 
-GLOSSARY = load_glossary()
+
+def _make_proxies(cfg: dict):
+    """从配置中提取代理设置，全为空时返回 None"""
+    p = cfg["http"].get("proxies")
+    return p if p and any(p.values()) else None
+
+
+def _make_headers(cfg: dict) -> dict:
+    """从配置中构建 HTTP 请求头"""
+    return {"User-Agent": cfg["http"]["user_agent"], "Accept": cfg["http"]["accept"]}
 
 
 def _parse_pattern(pattern: str) -> tuple:
-    """
+    r"""
     解析模式字符串，返回 (基础词, 正则表达式, 是否有可选后缀)
 
     例如:
     - "undead * (mobs)" -> ("undead", r"undead\s+\w+(?:\s+mobs)?", True)
     - "baby *" -> ("baby", r"baby(?:\s+\w+)?", False)
     """
-    import re as regex_module
 
     # 提取可选后缀 (xxx)
     optional_suffix = ""
     has_optional = False
     if pattern.endswith(")"):
-        match = regex_module.search(r'\(([^)]+)\)$', pattern)
+        match = re.search(r'\(([^)]+)\)$', pattern)
         if match:
             optional_suffix = match.group(1)
             pattern = pattern[:match.start()].strip()
@@ -199,14 +216,14 @@ def _parse_pattern(pattern: str) -> tuple:
     # 构建正则表达式
     if star_count == 0:
         # 无通配符，精确匹配
-        regex_pattern = regex_module.escape(pattern)
+        regex_pattern = re.escape(pattern)
     else:
         parts = pattern.split("*")
         regex_parts = []
         for i, part in enumerate(parts):
             part = part.strip()
             if part:
-                regex_parts.append(regex_module.escape(part))
+                regex_parts.append(re.escape(part))
             if i < len(parts) - 1:  # 不是最后一个
                 # * 匹配 0-1 个词
                 regex_parts.append(r"(?:\s+\w+)?")
@@ -214,7 +231,7 @@ def _parse_pattern(pattern: str) -> tuple:
 
     # 添加可选后缀
     if has_optional:
-        regex_pattern += r"(?:\s+" + regex_module.escape(optional_suffix) + r")?"
+        regex_pattern += r"(?:\s+" + re.escape(optional_suffix) + r")?"
 
     return (base_term, regex_pattern, has_optional)
 
@@ -238,7 +255,6 @@ def find_relevant_terms(text: str, glossary: dict) -> dict:
     if not terms:
         return {}
 
-    import re as regex_module
     text_lower = text.lower()
     matches = []
 
@@ -247,7 +263,7 @@ def find_relevant_terms(text: str, glossary: dict) -> dict:
         base_term, regex_pattern, _ = _parse_pattern(en_term)
 
         # 使用正则匹配
-        for match in regex_module.finditer(regex_pattern, text_lower, regex_module.IGNORECASE):
+        for match in re.finditer(regex_pattern, text_lower, re.IGNORECASE):
             start, end = match.span()
             matches.append((start, end, base_term, zh_term))
 
@@ -487,7 +503,10 @@ class FeedbackScraper:
         self.base_url = self.feedback_config.get('base_url', 'https://feedback.minecraft.net')
         self.timeout = self.feedback_config.get('timeout', 30)
         self.headers = {
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+            'Accept': (
+                'text/html,application/xhtml+xml,application/xml;q=0.9,'
+                'image/avif,image/webp,image/apng,*/*;q=0.8'
+            ),
             'Accept-Language': 'zh-CN,zh;q=0.9,en-US;q=0.8,en;q=0.7',
             'Accept-Encoding': 'gzip, deflate, br',
             'DNT': '1',
@@ -608,7 +627,6 @@ def convert_feedback_html_to_blocks(html_content, base_url=""):
 
 def process_feedback_news(news_item: dict, config: dict) -> dict:
     """完整处理单篇 Feedback 文章"""
-    import sys
     scraper = FeedbackScraper(config)
     article_content = scraper.fetch_article_content(news_item['url'])
     if not article_content:
@@ -618,7 +636,8 @@ def process_feedback_news(news_item: dict, config: dict) -> dict:
     title_to_translate = article_content['title']
     translated_title = translate_text(
         title_to_translate,
-        system_prompt=config["prompts"]["translate_title_system"]
+        system_prompt=config["prompts"]["translate_title_system"],
+        config=config,
     ) or ""
     if translated_title:
         print(f"  原标题: {title_to_translate}")
@@ -627,7 +646,7 @@ def process_feedback_news(news_item: dict, config: dict) -> dict:
     feedback_base_url = config.get('feedback_site', {}).get('base_url', 'https://feedback.minecraft.net')
     full_url = urljoin(feedback_base_url, news_item['url'])
     blocks = convert_feedback_html_to_blocks(article_content['content'], base_url=full_url)
-    translate_blocks(blocks)
+    translate_blocks(blocks, config=config)
 
     return {
         "title": title_to_translate,
@@ -645,7 +664,7 @@ def process_feedback_news(news_item: dict, config: dict) -> dict:
 
 # ── 翻译 ─────────────────────────────────────────────
 
-def translate_text(text, system_prompt=None, use_glossary=True):
+def translate_text(text, system_prompt=None, use_glossary=True, config=None, glossary=None):
     """
     调用 OpenAI 兼容 API 翻译文本（支持自动重试）
 
@@ -653,25 +672,30 @@ def translate_text(text, system_prompt=None, use_glossary=True):
         text: 待翻译的文本
         system_prompt: 系统提示词（可选）
         use_glossary: 是否使用词汇表动态添加术语对照（默认 True）
+        config: 配置字典，None 时使用模块级 CFG
+        glossary: 词汇表字典，None 时使用模块级 GLOSSARY
     """
-    system_prompt = system_prompt or CFG["prompts"]["translate_text_default"]
+    cfg = config or _get_cfg()
+    gls = glossary if glossary is not None else _get_glossary()
+    system_prompt = system_prompt or cfg["prompts"]["translate_text_default"]
 
     # 动态添加相关术语到提示词
-    if use_glossary and GLOSSARY:
-        relevant_terms = find_relevant_terms(text, GLOSSARY)
+    if use_glossary and gls:
+        relevant_terms = find_relevant_terms(text, gls)
         if relevant_terms:
-            glossary_prompt = build_glossary_prompt(relevant_terms, GLOSSARY.get("placeholders", {}))
+            glossary_prompt = build_glossary_prompt(relevant_terms, gls.get("placeholders", {}))
             system_prompt = system_prompt + glossary_prompt
             print(f"[词汇表] 添加 {len(relevant_terms)} 个相关术语到提示词")
 
-    host = CFG["openai_compat"]["host"]
-    endpoint = CFG["openai_compat"]["endpoint"]
-    api_key = CFG["openai_compat"]["api_key"]
-    model = CFG["openai_compat"]["model"]
-    max_tokens = int(CFG["openai_compat"].get("max_tokens", 10000))
-    timeout = int(CFG["openai_compat"].get("timeout", 120))
-    verify_ssl = CFG["http"]["verify_ssl"]
-    max_retries = int(CFG.get("retry", {}).get("translation", {}).get("max_retries", 3))
+    host = cfg["openai_compat"]["host"]
+    endpoint = cfg["openai_compat"]["endpoint"]
+    api_key = cfg["openai_compat"]["api_key"]
+    model = cfg["openai_compat"]["model"]
+    max_tokens = int(cfg["openai_compat"].get("max_tokens", 10000))
+    timeout = int(cfg["openai_compat"].get("timeout", 120))
+    verify_ssl = cfg["http"]["verify_ssl"]
+    max_retries = int(cfg.get("retry", {}).get("translation", {}).get("max_retries", 3))
+    proxies = _make_proxies(cfg)
 
     if not api_key or "********" in api_key:
         print("[翻译] 错误: 未配置 API Key")
@@ -705,7 +729,7 @@ def translate_text(text, system_prompt=None, use_glossary=True):
                 print(f"[翻译] 第 {retry_count} 次重试...")
             response = requests.post(
                 api_url, json=payload, headers=headers,
-                timeout=timeout, verify=verify_ssl, proxies=PROXIES
+                timeout=timeout, verify=verify_ssl, proxies=proxies
             )
             response.raise_for_status()
             result = response.json()
@@ -734,20 +758,23 @@ def translate_text(text, system_prompt=None, use_glossary=True):
 
 # ── 新闻获取 ─────────────────────────────────────────
 
-def get_latest_news_list(page_size=None):
+def get_latest_news_list(page_size=None, config=None):
     """通过 Minecraft 官方 API 获取最新新闻列表"""
-    api_url = CFG["minecraft_api"]["search_url"]
+    cfg = config or _get_cfg()
+    api_url = cfg["minecraft_api"]["search_url"]
     params = {
-        "pageSize": page_size or CFG["minecraft_api"]["pageSize"],
-        "sortType": CFG["minecraft_api"]["sortType"],
-        "category": CFG["minecraft_api"]["category"]
+        "pageSize": page_size or cfg["minecraft_api"]["pageSize"],
+        "sortType": cfg["minecraft_api"]["sortType"],
+        "category": cfg["minecraft_api"]["category"]
     }
+    headers = _make_headers(cfg)
+    proxies = _make_proxies(cfg)
 
     try:
         print(f"[API] 正在获取新闻列表 (pageSize={params['pageSize']})...")
         response = requests.get(
-            api_url, params=params, headers=HEADERS_HTML,
-            timeout=int(CFG["http"].get("timeout", 120)), verify=CFG["http"]["verify_ssl"], proxies=PROXIES
+            api_url, params=params, headers=headers,
+            timeout=int(cfg["http"].get("timeout", 120)), verify=cfg["http"]["verify_ssl"], proxies=proxies
         )
         response.raise_for_status()
         result = response.json()
@@ -758,7 +785,7 @@ def get_latest_news_list(page_size=None):
             return []
 
         news_list = []
-        site_base = CFG["minecraft_api"]["site_base"]
+        site_base = cfg["minecraft_api"]["site_base"]
         for item in items:
             news_url = item.get("url", "")
             if news_url and news_url.startswith("/"):
@@ -782,37 +809,25 @@ def get_latest_news_list(page_size=None):
 
 def classify_news_type(title: str) -> str:
     """根据标题判断新闻类型"""
-    t = title.lower()
-    # Java 版本（优先级高）
-    if "snapshot" in t:
-        return "java_snapshot"
-    if "pre-release" in t or "prerelease" in t:
-        return "java_prerelease"
-    if "release candidate" in t:
-        return "java_rc"
-    # 基岩版本
-    if "beta" in t or "preview" in t or "预览" in t:
-        return "bedrock_beta"
-    if "bedrock" in t or "基岩" in t:
-        return "bedrock_release"
-    # Java 正式版
-    if "java edition" in t or "java版" in t or re.search(r'\b1\.\d+(\.\d+)?\b', t):
-        return "java_release"
-    return "other"
+    from utils import classify_article_type
+    return classify_article_type(title, fallback="other")
 
 
 # ── 文章解析 ─────────────────────────────────────────
 
-def parse_article_page(article_url):
+def parse_article_page(article_url, config=None):
     """解析 Minecraft 新闻文章页面"""
     if not article_url:
         return None
+    cfg = config or _get_cfg()
+    headers = _make_headers(cfg)
+    proxies = _make_proxies(cfg)
 
     try:
         print(f"[解析] 获取文章: {article_url}")
         response = requests.get(
-            article_url, headers=HEADERS_HTML,
-            timeout=int(CFG["http"].get("timeout", 120)), verify=CFG["http"]["verify_ssl"], proxies=PROXIES
+            article_url, headers=headers,
+            timeout=int(cfg["http"].get("timeout", 120)), verify=cfg["http"]["verify_ssl"], proxies=proxies
         )
         response.raise_for_status()
         soup = BeautifulSoup(response.text, "html.parser")
@@ -821,7 +836,7 @@ def parse_article_page(article_url):
         title = title_tag.get_text(strip=True) if title_tag else ""
 
         date_tag = soup.find("meta", {"property": "article:published_time"})
-        release_date = date_tag["content"] if date_tag else ""
+        release_date = date_tag.get("content", "") if date_tag else ""
 
         # 提取头图
         header_image_url = ""
@@ -848,7 +863,7 @@ def parse_article_page(article_url):
             text = re.sub(r"\s+", " ", text or "").strip()
             if not text:
                 return None
-            return hashlib.sha1(text.encode("utf-8")).hexdigest()
+            return hashlib.sha1(text.encode("utf-8")).hexdigest()  # noqa: S324
 
         candidates = []
         intro = soup.find("div", class_="article-text")
@@ -999,10 +1014,12 @@ def _chunk_items_for_translation(items, max_chars=1000, max_items=10):
     return batches
 
 
-def translate_blocks(blocks: list) -> list:
+def translate_blocks(blocks: list, config=None, glossary=None) -> list:
     """批量翻译内容块"""
     if not blocks:
         return blocks
+    cfg = config or _get_cfg()
+    gls = glossary if glossary is not None else _get_glossary()
 
     for block in blocks:
         if block.get("type") == "pre":
@@ -1025,11 +1042,11 @@ def translate_blocks(blocks: list) -> list:
         return blocks
 
     print(f"[翻译] 开始翻译 {len(items_to_translate)} 个文本块")
-    max_workers = int(CFG.get("concurrency", {}).get("translation_workers", 3))
-    batch_max_chars = int(CFG.get("concurrency", {}).get("batch_max_chars", 1000))
-    batch_max_items = int(CFG.get("concurrency", {}).get("batch_max_items", 10))
+    max_workers = int(cfg.get("concurrency", {}).get("translation_workers", 3))
+    batch_max_chars = int(cfg.get("concurrency", {}).get("batch_max_chars", 1000))
+    batch_max_items = int(cfg.get("concurrency", {}).get("batch_max_items", 10))
     batches = _chunk_items_for_translation(items_to_translate, max_chars=batch_max_chars, max_items=batch_max_items)
-    system_prompt = CFG["prompts"]["translate_blocks_system"]
+    system_prompt = cfg["prompts"]["translate_blocks_system"]
     translate_idx_to_translation = {}
 
     def translate_batch(batch_index, batch):
@@ -1037,16 +1054,18 @@ def translate_blocks(blocks: list) -> list:
 
         # 为当前批次动态添加相关术语
         batch_system_prompt = system_prompt
-        if GLOSSARY:
+        if gls:
             # 收集批次中所有文本
             batch_texts = " ".join([item.get("text", "") for item in batch])
-            relevant_terms = find_relevant_terms(batch_texts, GLOSSARY)
+            relevant_terms = find_relevant_terms(batch_texts, gls)
             if relevant_terms:
-                glossary_prompt = build_glossary_prompt(relevant_terms, GLOSSARY.get("placeholders", {}))
+                glossary_prompt = build_glossary_prompt(relevant_terms, gls.get("placeholders", {}))
                 batch_system_prompt = system_prompt + glossary_prompt
                 print(f"[词汇表] 批次 {batch_index + 1} 添加 {len(relevant_terms)} 个术语")
 
-        translated_result = translate_text(batch_json, system_prompt=batch_system_prompt, use_glossary=False)
+        translated_result = translate_text(
+            batch_json, system_prompt=batch_system_prompt, use_glossary=False, config=cfg
+        )
         if not translated_result:
             print(f"[翻译] 批次 {batch_index + 1} 失败，跳过")
             return {}
@@ -1057,30 +1076,23 @@ def translate_blocks(blocks: list) -> list:
         except json.JSONDecodeError:
             cleaned = re.sub(r"^```(?:json)?\s*", "", translated_result.strip())
             cleaned = re.sub(r"\s*```$", "", cleaned)
-            try:
+            with contextlib.suppress(json.JSONDecodeError):
                 parsed_result = json.loads(cleaned)
-            except json.JSONDecodeError:
-                pass
-
         batch_translations = {}
         if isinstance(parsed_result, list):
             for obj in parsed_result:
                 if isinstance(obj, dict) and "id" in obj and "translated_text" in obj:
                     tid = str(obj["id"])
                     if tid.startswith("t"):
-                        try:
+                        with contextlib.suppress(ValueError):
                             batch_translations[int(tid[1:])] = str(obj["translated_text"])
-                        except ValueError:
-                            pass
         else:
-            lines = [l.strip() for l in (translated_result or "").splitlines() if l.strip()]
-            for item, line in zip(batch, lines):
+            lines = [line.strip() for line in (translated_result or "").splitlines() if line.strip()]
+            for item, line in zip(batch, lines, strict=False):
                 tid = str(item["id"])
                 if tid.startswith("t"):
-                    try:
+                    with contextlib.suppress(ValueError):
                         batch_translations[int(tid[1:])] = line
-                    except ValueError:
-                        pass
 
         print(f"[翻译] 批次 {batch_index + 1}/{len(batches)} 完成: {len(batch_translations)} 项")
         return batch_translations
@@ -1128,19 +1140,22 @@ def blocks_to_plaintext(blocks: list, field: str = "source_text") -> str:
 
 # ── 下载 ─────────────────────────────────────────────
 
-def download_header_image(image_url, save_path):
+def download_header_image(image_url, save_path, config=None):
     """下载文章头图"""
     if not image_url:
         return False
-    max_retries = int(CFG.get("retry", {}).get("download", {}).get("max_retries", 3))
+    cfg = config or _get_cfg()
+    headers = _make_headers(cfg)
+    proxies = _make_proxies(cfg)
+    max_retries = int(cfg.get("retry", {}).get("download", {}).get("max_retries", 3))
     for attempt in range(max_retries + 1):
         try:
             if attempt > 0:
                 print(f"[下载] 第 {attempt} 次重试...")
             response = requests.get(
-                image_url, headers=HEADERS_HTML,
-                timeout=int(CFG["http"].get("timeout", 120)), verify=CFG["http"]["verify_ssl"],
-                proxies=PROXIES, stream=True
+                image_url, headers=headers,
+                timeout=int(cfg["http"].get("timeout", 120)), verify=cfg["http"]["verify_ssl"],
+                proxies=proxies, stream=True
             )
             response.raise_for_status()
             with open(save_path, "wb") as f:
@@ -1164,15 +1179,15 @@ def reindex_blocks(blocks: list) -> list:
     return blocks
 
 
-def save_article_json(data: dict, save_dir: str = None) -> str:
+def save_article_json(data: dict, save_dir: str = None, config=None) -> str:
     """
     将文章数据保存为 JSON 文件，返回保存路径。
     文件名使用安全的标题+时间戳，避免冲突。
     """
     if not data:
         return None
-
-    save_dir = save_dir or CFG["output"]["save_dir"]
+    cfg = config or _get_cfg()
+    save_dir = save_dir or cfg["output"]["save_dir"]
     os.makedirs(save_dir, exist_ok=True)
 
     # 重新编号 blocks
@@ -1217,48 +1232,33 @@ def save_article_json(data: dict, save_dir: str = None) -> str:
         with open(file_path, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
         print(f"[保存] JSON: {file_path}")
-    except IOError as e:
+    except OSError as e:
         print(f"[保存] 写入失败: {e}")
         return None
-
-    # 下载头图（与 JSON 同名）
-    header_image_url = data.get("header_image_url", "")
-    if header_image_url:
-        image_ext = ".jpg"
-        try:
-            url_path = header_image_url.split("?")[0]
-            if "." in url_path:
-                ext = url_path.rsplit(".", 1)[-1].lower()
-                if ext in ["jpg", "jpeg", "png", "gif", "webp"]:
-                    image_ext = f".{ext}"
-        except Exception:
-            pass
-        base_path = file_path.rsplit(".", 1)[0]
-        image_path = base_path + image_ext
-        download_header_image(header_image_url, image_path)
 
     return file_path
 
 
 # ── 高级处理 ─────────────────────────────────────────
 
-def process_article(news_item: dict) -> dict:
+def process_article(news_item: dict, config=None) -> dict:
     """
-    完整处理单篇文章：解析 → 翻译 → 组装数据
-    
+    完整处理单篇文章：解析 → 翻��� → 组装数据
+
     Args:
         news_item: 新闻列表项，包含 url, title 等字段
-    
+        config: 配置字典，None 时使用模块级 CFG
+
     Returns:
         完整的文章数据字典，失败返回 None
     """
-    import sys
+    cfg = config or _get_cfg()
 
     print(f"\n[处理] {news_item['title']}")
     sys.stdout.flush()
 
     # 解析
-    article_data = parse_article_page(news_item['url'])
+    article_data = parse_article_page(news_item['url'], config=cfg)
     if not article_data:
         print("[处理] 解析失败")
         return None
@@ -1267,7 +1267,8 @@ def process_article(news_item: dict) -> dict:
     title_to_translate = article_data["title"] or news_item['title']
     translated_title = translate_text(
         title_to_translate,
-        system_prompt=CFG["prompts"]["translate_title_system"]
+        system_prompt=cfg["prompts"]["translate_title_system"],
+        config=cfg,
     ) or ""
 
     if translated_title:
@@ -1276,7 +1277,7 @@ def process_article(news_item: dict) -> dict:
 
     # 翻译内容
     blocks = article_data.get("blocks", [])
-    translate_blocks(blocks)
+    translate_blocks(blocks, config=cfg)
 
     source_content = blocks_to_plaintext(blocks, field="source_text")
     translated_content = blocks_to_plaintext(blocks, field="translated_text")
