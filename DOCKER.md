@@ -85,19 +85,27 @@ docker run -d \
 
 ```bash
 docker build -t mcttk .
-docker save mcttk | gzip > mcttk.tar.gz
+
+# 以下四选一
+docker save -o mcttk_v1.tar mcttk:latest  # 导出时同时指定版本标签
+
+docker save -o mcttk.tar mcttk            # 保存为 mcttk.tar
+
+docker save mcttk > mcttk.tar             # 等价写法，用重定向
+
+docker save mcttk | gzip > mcttk.tar.gz   # 保存为 mcttk.tar.gz
 ```
 
 ### 传输到目标机器
 
 ```bash
-scp mcttk.tar.gz user@server:/path/to/deploy/
+scp mcttk.tar user@server:/path/to/deploy/
 ```
 
 ### 在目标机器上加载并运行
 
 ```bash
-docker load < mcttk.tar.gz
+docker load < mcttk.tar
 docker run -d \
   --name mcttk-scraper \
   --restart unless-stopped \
