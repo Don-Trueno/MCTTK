@@ -154,6 +154,24 @@ def _filter_and_check_state(all_news: list, config: dict, state_file: str):
         state["posted_urls"] = list(posted_urls)
         state.pop("_first_run", None)
         save_state(state_file, state)
+
+        # 同时将 output 目录中已有的文件标记为已发布，避免重复发布
+        save_dir = config["output"]["save_dir"]
+        poster_state_file = os.path.join(save_dir, ".posted.json")
+        if os.path.exists(save_dir):
+            import glob as _glob
+
+            from poster import load_posted, save_posted
+            existing_posted = load_posted(poster_state_file)
+            existing_stems = {
+                os.path.splitext(os.path.basename(p))[0]
+                for p in _glob.glob(os.path.join(save_dir, "*.txt"))
+            }
+            if existing_stems:
+                existing_posted.update(existing_stems)
+                save_posted(poster_state_file, existing_posted)
+                print(f"[主] 已将 output 目录中 {len(existing_stems)} 个文件标记为已发布")
+
         return None
 
     new_news = [n for n in filtered if n['url'] not in posted_urls]
