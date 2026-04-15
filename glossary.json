@@ -41,7 +41,8 @@
     "Wither": "只有是状态效果时译为'凋零'，否则译为'凋灵'",
 
     "polished": "磨制",
-    "cut": "形容词、且后接方块名字时译为'切制'"
+    "chiseled": " 雕纹"
+    "cut": "形容词、且后接方块名字时译为'切制'",
     "Golden Dandelion": "金蒲公英",
     "Short Grass": "矮草丛",
     "Tall Grass": "高草丛",
@@ -72,6 +73,7 @@
     "Potent Sulfur": "烈性硫黄",
     "Sulfur blocks": "硫黄块",
     "Sulfur": "硫黄",
+    "Sulfur Spike": "硫黄尖锥",
 
     "baby": "幼年",
     "baby model": "幼年变种的模型",
@@ -89,8 +91,8 @@
     "Snifflet": "幼年嗅探兽",
     "Strider": "炽足兽",
     "Striders": "炽足兽们",
-    "Sulfur Cube": "硫黄怪(-)",
-    "sulfur_cube": "硫黄怪(-)",
+    "Sulfur Cube": "硫方怪",
+    "sulfur_cube": "硫方怪",
     
 
     "Herobrine": "HIM",
