@@ -62,7 +62,7 @@
     "Gold Nugget": "金粒",
     "Metal Nugget": "金属粒",
     "Propagule": "胎生苗",
-    "nether_sprout": "下界苗",
+    "nether sprout": "下界苗",
     "lily pad": "睡莲",
     "Coarse Dirt": "砂土",
     "Pale": "苍白",
@@ -92,7 +92,6 @@
     "Strider": "炽足兽",
     "Striders": "炽足兽们",
     "Sulfur Cube": "硫方怪",
-    "sulfur_cube": "硫方怪",
     
 
     "Herobrine": "HIM",
@@ -108,6 +107,8 @@
     "transparent": "半透明(*)模式",
     "Lightmap": "光照贴图",
     "light levels": "光照等级",
-    "tick": "游戏刻(*)"
+    "tick": "游戏刻(*)",
+
+    "Configured Features": "已配置的地物"
   }
 }
